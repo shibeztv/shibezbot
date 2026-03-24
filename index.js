@@ -86,8 +86,10 @@ if (fs.existsSync(LEARNED_FILE)) {
 
 // ── Live channel tracking ─────────────────────────────────────────────────────
 
-const liveChannels   = new Set();
-let   appAccessToken = null;
+const liveChannels     = new Set();
+const prevLiveChannels = new Set(); // tracks previous state to detect go-live
+const prevCategories   = {};         // { channelName: "category name" }
+let   appAccessToken   = null;
 
 async function fetchAppToken() {
   try {
@@ -122,9 +124,87 @@ async function updateLiveChannels() {
       });
     }
     const data = await res.json();
+    // Snapshot previous state before updating
+    const snapshot = new Set(prevLiveChannels);
+
+    prevLiveChannels.clear();
+    liveChannels.forEach(ch => prevLiveChannels.add(ch));
     liveChannels.clear();
-    for (const stream of (data.data || [])) liveChannels.add(stream.user_login.toLowerCase());
+    for (const stream of (data.data || [])) {
+      liveChannels.add(stream.user_login.toLowerCase());
+    }
     console.log(`📡  [${ts()}] Live: ${liveChannels.size > 0 ? [...liveChannels].join(", ") : "(none)"}`);
+
+    // Build a map of current stream info for category tracking
+    const streamInfo = {};
+    for (const stream of (data.data || [])) {
+      streamInfo[stream.user_login.toLowerCase()] = stream.game_name || "";
+    }
+
+    // Helper: batch-ping subscribers
+    function fireNotification(ch, message) {
+      const users = (state.notifyUsers && state.notifyUsers[ch]) || [];
+      if (users.length === 0) return;
+      const prefix = `${message} `;
+      const chunks = [];
+      let current = [];
+      let len = prefix.length;
+      for (const u of users) {
+        const part = `@${u} `;
+        if (len + part.length > 490 && current.length > 0) {
+          chunks.push(current);
+          current = [];
+          len = prefix.length;
+        }
+        current.push(u);
+        len += part.length;
+      }
+      if (current.length > 0) chunks.push(current);
+      const target = `#${ch}`;
+      chunks.forEach((chunk, i) => {
+        setTimeout(() => {
+          client.say(target, prefix + chunk.map(u => `@${u}`).join(" ")).catch(() => {});
+        }, i * 500);
+      });
+    }
+
+    function notifyEvent(ch, event) {
+      if (!state.notifyEvents || !state.notifyEvents[ch]) return false;
+      return !!state.notifyEvents[ch][event];
+    }
+
+    const allTracked = new Set([...snapshot, ...liveChannels]);
+    for (const ch of allTracked) {
+      const wasLive  = snapshot.has(ch);
+      const isLive   = liveChannels.has(ch);
+
+      // 🔴 Went live
+      if (!wasLive && isLive && notifyEvent(ch, "live")) {
+        const cat = streamInfo[ch] ? ` — playing ${streamInfo[ch]}` : "";
+        fireNotification(ch, `🔴 ${ch} is now live${cat}!`);
+        console.log(`🔴  [${ts()}] Fired live notification in #${ch}.`);
+      }
+
+      // ⚫ Went offline
+      if (wasLive && !isLive && notifyEvent(ch, "offline")) {
+        fireNotification(ch, `⚫ ${ch} has gone offline.`);
+        console.log(`⚫  [${ts()}] Fired offline notification in #${ch}.`);
+      }
+
+      // 🎮 Category changed (only while live)
+      if (isLive && notifyEvent(ch, "category")) {
+        const newCat  = streamInfo[ch] || "";
+        const prevCat = prevCategories[ch];
+        if (prevCat !== undefined && prevCat !== newCat && newCat) {
+          fireNotification(ch, `🎮 ${ch} switched to ${newCat}!`);
+          console.log(`🎮  [${ts()}] Fired category change notification in #${ch}: ${prevCat} → ${newCat}.`);
+        }
+      }
+
+      // Update category memory
+      if (isLive) prevCategories[ch] = streamInfo[ch] || "";
+      else delete prevCategories[ch];
+    }
   } catch (e) {
     console.warn("⚠️  Could not update live channels:", e.message);
   }

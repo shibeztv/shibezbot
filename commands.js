@@ -137,6 +137,56 @@ function handle(channel, tags, message, ctx) {
     return `📖 ${sentences.join(" ")}`;
   }
 
+  if (cmd === "notify") {
+    const sub  = (args[0] || "").toLowerCase();
+    const user = (tags.username || "").toLowerCase();
+
+    // ?notify join — any user adds themselves
+    if (sub === "join") {
+      if (!state.notifyUsers) state.notifyUsers = {};
+      if (!state.notifyUsers[ch]) state.notifyUsers[ch] = [];
+      if (state.notifyUsers[ch].includes(user)) return `@${user} You are already on the notification list for #${ch}.`;
+      state.notifyUsers[ch].push(user);
+      saveState();
+      return `@${user} ✅ You will be pinged when #${ch} goes live!`;
+    }
+
+    // ?notify leave — any user removes themselves
+    if (sub === "leave") {
+      if (!state.notifyUsers || !state.notifyUsers[ch]) return `@${user} You are not on the notification list.`;
+      const idx = state.notifyUsers[ch].indexOf(user);
+      if (idx === -1) return `@${user} You are not on the notification list.`;
+      state.notifyUsers[ch].splice(idx, 1);
+      saveState();
+      return `@${user} 🔕 Removed from notifications for #${ch}.`;
+    }
+
+    // ?notify live|offline|category on|off — broadcaster or mod only
+    if ((sub === "live" || sub === "offline" || sub === "category") && (args[1] === "on" || args[1] === "off")) {
+      if (!isOwner(tags) && !isBroadcaster(tags) && !isModOrVip(tags)) return null;
+      if (!state.notifyEvents) state.notifyEvents = {};
+      if (!state.notifyEvents[ch]) state.notifyEvents[ch] = { live: false, offline: false, category: false };
+      state.notifyEvents[ch][sub] = (args[1] === "on");
+      saveState();
+      return args[1] === "on"
+        ? `✅ ${sub} notifications enabled for #${ch}.`
+        : `🔕 ${sub} notifications disabled for #${ch}.`;
+    }
+
+    // ?notify list — show count and event states
+    if (sub === "list") {
+      const users  = (state.notifyUsers && state.notifyUsers[ch]) || [];
+      const events = (state.notifyEvents && state.notifyEvents[ch]) || {};
+      const live     = events.live     ? "🔴 live" : "";
+      const offline  = events.offline  ? "⚫ offline" : "";
+      const category = events.category ? "🎮 category" : "";
+      const active   = [live, offline, category].filter(Boolean).join(" | ") || "none enabled";
+      return `🔔 #${ch}: ${users.length} subscriber(s) | active: ${active}`;
+    }
+
+    return `Usage: ?notify join/leave/list | ?notify live/offline/category on/off (mod/broadcaster)`;
+  }
+
   if (cmd === "channels") {
     const postList   = state.postChannels.join(", ")         || "(none)";
     const manualList = (state.manualChannels||[]).join(", ") || "(none)";
@@ -362,7 +412,7 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "help") {
     return (
-      `Commands (${PREFIX}): say | join | manual | interval | greeter | channels | adduser | 8ball | mock | markov`
+      `Commands (${PREFIX}): say | join | manual | interval | greeter | channels | adduser | 8ball | mock | markov | notify join/leave/list | notify live/offline/category on/off`
     );
   }
 
