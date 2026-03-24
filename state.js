@@ -6,7 +6,7 @@
 const fs   = require("fs");
 const path = require("path");
 
-const STATE_FILE = path.resolve("./bot_state.json");
+const STATE_FILE = path.resolve(process.env.DATA_DIR || ".", "bot_state.json");
 
 const DEFAULTS = {
   postChannels:      [],

@@ -204,7 +204,7 @@ client.on("message", (channel, tags, message, self) => {
   const manualChannels = state.manualChannels || [];
 
   // Learn from all joined channels (post, manual, and learn)
-  if (state.postChannels.includes(ch) || state.learnChannels.includes(ch) || manualChannels.includes(ch)) {
+  if (state.postChannels.includes(ch) || state.learnChannels.includes(ch)) {
     learnMessage(username, message);
   }
 
