@@ -16,7 +16,8 @@
  */
 
 
-const PREFIX = process.env.CMD_PREFIX || "&";
+const PREFIX   = "&";  // used in help/usage strings
+const PREFIXES = new Set(["&", "$", "?"]);
 const OWNER  = "shlbez";
 
 function isOwner(tags) {
@@ -50,8 +51,8 @@ function hasLimitedAccess(tags, state) {
 }
 
 function parseCommand(message) {
-  if (!message.startsWith(PREFIX)) return null;
-  const parts = message.slice(PREFIX.length).trim().split(/\s+/);
+  if (!message || !PREFIXES.has(message[0])) return null;
+  const parts = message.slice(1).trim().split(/\s+/);
   return { cmd: parts[0].toLowerCase(), args: parts.slice(1) };
 }
 
@@ -361,11 +362,7 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "help") {
     return (
-      `Commands (${PREFIX}): ` +
-      `start | stop | status | say | interval <s> | cooldown <n> | minlines <n> | greeter | ` +
-      `join <ch> | leave <ch> | manual <ch> | unmanual <ch> | addlearn <ch> | removelearn <ch> | ` +
-      `channels | lines | adduser <u> | removeuser <u> | users | ` +
-      `[all] 8ball <q> | mock <u> | markov <u> | story`
+      `Commands (${PREFIX}): say | join | manual | interval | greeter | channels | adduser | 8ball | mock | markov`
     );
   }
 
