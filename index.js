@@ -9,10 +9,12 @@ const commands     = require("./commands");
 
 // ── Required env vars ─────────────────────────────────────────────────────────
 
-const BOT_USERNAME = process.env.BOT_USERNAME;
-const OAUTH_TOKEN  = process.env.OAUTH_TOKEN;
-const HOME_CHANNEL = process.env.CHANNEL;       // the bot's "home" channel (also used for command replies)
-const SEED_FILE    = process.env.SEED_FILE || "./seed.txt";
+const BOT_USERNAME         = process.env.BOT_USERNAME;
+const OAUTH_TOKEN          = process.env.OAUTH_TOKEN;
+const HOME_CHANNEL         = process.env.CHANNEL;
+const SEED_FILE            = process.env.SEED_FILE || "./seed.txt";
+const TWITCH_CLIENT_ID     = process.env.TWITCH_CLIENT_ID;
+const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET;
 
 const IGNORE_BOTS = (process.env.IGNORE_BOTS ||
   "nightbot,streamelements,fossabot,moobot,wizebot,botisimo")
@@ -27,7 +29,6 @@ if (!BOT_USERNAME || !OAUTH_TOKEN || !HOME_CHANNEL) {
 
 const state = stateManager.load();
 
-// Always ensure home channel is in postChannels
 if (!state.postChannels.includes(HOME_CHANNEL.toLowerCase())) {
   state.postChannels.unshift(HOME_CHANNEL.toLowerCase());
   stateManager.save(state);
@@ -35,6 +36,25 @@ if (!state.postChannels.includes(HOME_CHANNEL.toLowerCase())) {
 
 function saveState() {
   stateManager.save(state);
+}
+
+// ── Per-channel setting helpers ───────────────────────────────────────────────
+
+function getChannelInterval(ch) {
+  return (state.channelSettings[ch] && state.channelSettings[ch].intervalMs != null)
+    ? state.channelSettings[ch].intervalMs
+    : state.intervalMs;
+}
+
+function getChannelCooldown(ch) {
+  return (state.channelSettings[ch] && state.channelSettings[ch].cooldownMessages != null)
+    ? state.channelSettings[ch].cooldownMessages
+    : state.cooldownMessages;
+}
+
+function setChannelSetting(ch, key, value) {
+  if (!state.channelSettings[ch]) state.channelSettings[ch] = {};
+  state.channelSettings[ch][key] = value;
 }
 
 // ── Markov chain ──────────────────────────────────────────────────────────────
@@ -48,8 +68,9 @@ if (fs.existsSync(SEED_FILE)) {
   console.log(`📚  Seed loaded: ${lines.length} lines | corpus: ${markov.size}`);
 }
 
-// Also load previously learned corpus if it exists
-const LEARNED_FILE = "./learned_corpus.txt";
+const DATA_DIR     = process.env.DATA_DIR || ".";
+const LEARNED_FILE = path.join(DATA_DIR, "learned_corpus.txt");
+
 if (fs.existsSync(LEARNED_FILE)) {
   const lines = fs.readFileSync(LEARNED_FILE, "utf8")
     .split("\n").map(l => l.trim()).filter(Boolean);
@@ -57,13 +78,69 @@ if (fs.existsSync(LEARNED_FILE)) {
   console.log(`🧠  Learned corpus loaded: ${lines.length} extra lines | total: ${markov.size}`);
 }
 
-// ── Per-channel message counter (for cooldown) ────────────────────────────────
-// Tracks how many non-bot messages have been sent since the bot last posted
-// in each channel. Reset to 0 after the bot posts.
-const msgCounters = {};  // { channelName: number }
+// ── Live channel tracking ─────────────────────────────────────────────────────
 
-function resetCooldownCounters() {
-  for (const ch of state.postChannels) msgCounters[ch] = 0;
+const liveChannels   = new Set();
+let   appAccessToken = null;
+
+async function fetchAppToken() {
+  try {
+    const res = await fetch(
+      `https://id.twitch.tv/oauth2/token?client_id=${TWITCH_CLIENT_ID}&client_secret=${TWITCH_CLIENT_SECRET}&grant_type=client_credentials`,
+      { method: "POST" }
+    );
+    const data = await res.json();
+    return data.access_token || null;
+  } catch (e) {
+    console.warn("⚠️  Could not fetch Twitch app token:", e.message);
+    return null;
+  }
+}
+
+async function updateLiveChannels() {
+  if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) return;
+  const channels = allChannels();
+  if (channels.length === 0) return;
+  try {
+    if (!appAccessToken) appAccessToken = await fetchAppToken();
+    if (!appAccessToken) return;
+    const params = channels.map(ch => `user_login=${encodeURIComponent(ch)}`).join("&");
+    let res = await fetch(`https://api.twitch.tv/helix/streams?${params}`, {
+      headers: { "Client-ID": TWITCH_CLIENT_ID, "Authorization": `Bearer ${appAccessToken}` }
+    });
+    if (res.status === 401) {
+      appAccessToken = await fetchAppToken();
+      if (!appAccessToken) return;
+      res = await fetch(`https://api.twitch.tv/helix/streams?${params}`, {
+        headers: { "Client-ID": TWITCH_CLIENT_ID, "Authorization": `Bearer ${appAccessToken}` }
+      });
+    }
+    const data = await res.json();
+    liveChannels.clear();
+    for (const stream of (data.data || [])) liveChannels.add(stream.user_login.toLowerCase());
+    console.log(`📡  [${ts()}] Live: ${liveChannels.size > 0 ? [...liveChannels].join(", ") : "(none)"}`);
+  } catch (e) {
+    console.warn("⚠️  Could not update live channels:", e.message);
+  }
+}
+
+function isChannelLive(ch) {
+  if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) return true;
+  return liveChannels.has(ch.toLowerCase());
+}
+
+setInterval(updateLiveChannels, 2 * 60 * 1000);
+
+// ── Per-channel message counters (for cooldown) ───────────────────────────────
+
+const msgCounters = {};
+
+function resetCooldownCounters(ch) {
+  if (ch) {
+    msgCounters[ch] = 0;
+  } else {
+    for (const c of state.postChannels) msgCounters[c] = 0;
+  }
 }
 
 function incrementCounter(ch) {
@@ -72,11 +149,10 @@ function incrementCounter(ch) {
 }
 
 function cooldownReady(ch) {
-  if (!state.cooldownMessages || state.cooldownMessages === 0) return true;
-  return (msgCounters[ch] || 0) >= state.cooldownMessages;
+  const needed = getChannelCooldown(ch);
+  if (!needed || needed === 0) return true;
+  return (msgCounters[ch] || 0) >= needed;
 }
-
-
 
 function allChannels() {
   return [...new Set([...state.postChannels, ...state.learnChannels, ...(state.manualChannels||[])])];
@@ -91,31 +167,48 @@ const client = new tmi.Client({
   channels:   allChannels(),
 });
 
-// ── Timer ─────────────────────────────────────────────────────────────────────
+// ── Per-channel timers ────────────────────────────────────────────────────────
+// Each post channel gets its own independent timer.
 
-let postTimer = null;
+const postTimers = {};  // { channelName: intervalId }
 
-function stopTimer() {
-  if (postTimer) { clearInterval(postTimer); postTimer = null; }
+function stopTimer(ch) {
+  if (ch) {
+    if (postTimers[ch]) { clearInterval(postTimers[ch]); delete postTimers[ch]; }
+  } else {
+    for (const c of Object.keys(postTimers)) { clearInterval(postTimers[c]); delete postTimers[c]; }
+  }
 }
 
-function restartTimer() {
-  stopTimer();
-  if (!state.active) return;
-  postTimer = setInterval(() => {
-    for (const ch of state.postChannels) postNow(ch);
-  }, state.intervalMs);
-  console.log(`⏱️   Timer (re)started at ${state.intervalMs / 1000}s interval.`);
+function restartTimer(ch) {
+  if (ch) {
+    // Restart a single channel's timer
+    stopTimer(ch);
+    if (!state.active || !state.postChannels.includes(ch)) return;
+    const ms = getChannelInterval(ch);
+    postTimers[ch] = setInterval(() => postNow(ch), ms);
+    console.log(`⏱️   [#${ch}] Timer set to ${ms / 1000}s.`);
+  } else {
+    // Restart all channels
+    stopTimer();
+    if (!state.active) return;
+    for (const c of state.postChannels) {
+      const ms = getChannelInterval(c);
+      postTimers[c] = setInterval(() => postNow(c), ms);
+      console.log(`⏱️   [#${c}] Timer set to ${ms / 1000}s.`);
+    }
+  }
 }
 
-// ── Post a Markov message to a specific channel ───────────────────────────────
+// ── Post a Markov message ─────────────────────────────────────────────────────
 
 function postNow(channel) {
   const ch = channel.replace(/^#/, "");
   if (markov.size < state.minCorpus) return null;
   if (!cooldownReady(ch)) {
-    const remaining = state.cooldownMessages - (msgCounters[ch] || 0);
-    console.log(`⏳  [${ts()}] #${ch}: cooldown active — ${remaining} more message(s) needed.`);
+    const needed    = getChannelCooldown(ch);
+    const remaining = needed - (msgCounters[ch] || 0);
+    console.log(`⏳  [${ts()}] #${ch}: cooldown — ${remaining} more message(s) needed.`);
     return null;
   }
   const msg = markov.generate({ minWords: 6, maxWords: 28 });
@@ -124,7 +217,7 @@ function postNow(channel) {
   client.say(target, msg).catch(err =>
     console.warn(`⚠️  [${ts()}] say() failed on ${target}:`, err.message)
   );
-  msgCounters[ch] = 0;  // reset counter after posting
+  msgCounters[ch] = 0;
   console.log(`💬  [${ts()}] → ${target}: "${msg}"`);
   return msg;
 }
@@ -133,16 +226,13 @@ function postNow(channel) {
 
 function joinChannel(ch) {
   const name = ch.startsWith("#") ? ch : `#${ch}`;
-  client.join(name).catch(err =>
-    console.warn(`⚠️  Could not join ${name}:`, err.message)
-  );
+  client.join(name).catch(err => console.warn(`⚠️  Could not join ${name}:`, err.message));
 }
 
 function leaveChannel(ch) {
+  stopTimer(ch);
   const name = ch.startsWith("#") ? ch : `#${ch}`;
-  client.part(name).catch(err =>
-    console.warn(`⚠️  Could not leave ${name}:`, err.message)
-  );
+  client.part(name).catch(err => console.warn(`⚠️  Could not leave ${name}:`, err.message));
 }
 
 // ── Learn from chat messages ──────────────────────────────────────────────────
@@ -154,12 +244,10 @@ function learnMessage(username, message) {
   if (username.toLowerCase() === BOT_USERNAME.toLowerCase()) return;
   if (message.startsWith("!") || message.startsWith("/") || message.startsWith("$")) return;
   if (message.length < 10) return;
-
   markov.train(message);
   newLines.push(message.replace(/[\r\n]/g, " "));
 }
 
-// Flush learned lines to disk every 60s
 setInterval(() => {
   if (newLines.length === 0) return;
   fs.appendFileSync(LEARNED_FILE, newLines.join("\n") + "\n", "utf8");
@@ -167,7 +255,7 @@ setInterval(() => {
   newLines.length = 0;
 }, 60_000);
 
-// ── Command context (passed to commands.js) ───────────────────────────────────
+// ── Command context ───────────────────────────────────────────────────────────
 
 const ctx = {
   state, saveState,
@@ -176,6 +264,7 @@ const ctx = {
   postNow,
   joinChannel, leaveChannel,
   resetCooldownCounters,
+  getChannelInterval, getChannelCooldown, setChannelSetting,
   addLearnChannel: (ch) => {
     if (!state.learnChannels.includes(ch)) state.learnChannels.push(ch);
   },
@@ -190,30 +279,29 @@ const ctx = {
 client.on("connected", (addr, port) => {
   console.log(`✅  Connected to ${addr}:${port} as ${BOT_USERNAME}`);
   console.log(`📡  Channels: ${allChannels().join(", ")}`);
-  console.log(`⏱️   Interval: ${state.intervalMs / 1000}s | Active: ${state.active}`);
   console.log(`📚  Corpus: ${markov.size} lines`);
-
+  if (TWITCH_CLIENT_ID && TWITCH_CLIENT_SECRET) {
+    console.log(`🔴  Live channel tracking: enabled`);
+    updateLiveChannels();
+  } else {
+    console.log(`⚠️  Live channel tracking: disabled (TWITCH_CLIENT_ID/SECRET not set)`);
+  }
   if (state.active) restartTimer();
 });
 
 client.on("message", (channel, tags, message, self) => {
   if (self) return;
 
-  const username = (tags["display-name"] || tags.username || "").toLowerCase();
-  const ch       = channel.replace(/^#/, "");
+  const username       = (tags["display-name"] || tags.username || "").toLowerCase();
+  const ch             = channel.replace(/^#/, "");
   const manualChannels = state.manualChannels || [];
 
-  // Learn from all joined channels (post, manual, and learn)
   if (state.postChannels.includes(ch) || state.learnChannels.includes(ch)) {
-    learnMessage(username, message);
+    if (isChannelLive(ch)) learnMessage(username, message);
   }
 
-  // Count messages for cooldown — only in auto-post channels
-  if (state.postChannels.includes(ch)) {
-    incrementCounter(ch);
-  }
+  if (state.postChannels.includes(ch)) incrementCounter(ch);
 
-  // Handle commands in post channels AND manual channels (but not learn-only)
   if (!state.postChannels.includes(ch) && !manualChannels.includes(ch)) return;
 
   const reply = commands.handle(channel, tags, message, ctx);
@@ -232,8 +320,6 @@ client.on("reconnect", () => {
   console.log(`🔄  Reconnecting to Twitch…`);
 });
 
-// ── Safety net — prevent Railway crashes on unhandled async errors ─────────────
-
 process.on("unhandledRejection", (reason) => {
   console.error("⚠️  Unhandled rejection (continuing):", reason);
 });
@@ -242,26 +328,18 @@ process.on("uncaughtException", (err) => {
   console.error("⚠️  Uncaught exception (continuing):", err.message);
 });
 
-// ── Connect ───────────────────────────────────────────────────────────────────
-
 client.connect().catch(err => {
   console.error("❌  Connection failed:", err);
   process.exit(1);
 });
 
-// ── Graceful shutdown ─────────────────────────────────────────────────────────
-
 process.on("SIGINT", () => {
   console.log("\n🛑  Shutting down…");
-  if (newLines.length > 0) {
-    fs.appendFileSync(LEARNED_FILE, newLines.join("\n") + "\n", "utf8");
-  }
+  if (newLines.length > 0) fs.appendFileSync(LEARNED_FILE, newLines.join("\n") + "\n", "utf8");
   saveState();
   client.disconnect();
   process.exit(0);
 });
-
-// ── Utility ───────────────────────────────────────────────────────────────────
 
 function ts() {
   return new Date().toLocaleTimeString();

@@ -4,6 +4,8 @@
  * Auth tiers:
  *   1. OWNER ("shlbez")                          — all commands
  *   2. Mods / VIPs / allowedUsers in channel     — $say, $adduser, $channels, $lines, $users
+ *
+ * $interval and $cooldown are per-channel — they only affect the channel the command is typed in.
  */
 
 const PREFIX = process.env.CMD_PREFIX || "$";
@@ -38,12 +40,19 @@ function handle(channel, tags, message, ctx) {
   if (!parsed) return null;
 
   const { state } = ctx;
-
-  // Silently ignore anyone with no access at all
   if (!hasLimitedAccess(tags, state)) return null;
 
   const { cmd, args } = parsed;
-  const { saveState, markov, restartTimer, stopTimer, postNow, joinChannel, leaveChannel } = ctx;
+  const {
+    saveState, markov,
+    restartTimer, stopTimer,
+    postNow, joinChannel, leaveChannel,
+    resetCooldownCounters,
+    getChannelInterval, getChannelCooldown, setChannelSetting,
+  } = ctx;
+
+  // ch = the channel the command was typed in (no # prefix)
+  const ch = channel.replace(/^#/, "");
 
   // ── Commands available to everyone with any access ────────────────────────
 
@@ -96,47 +105,54 @@ function handle(channel, tags, message, ctx) {
     if (state.active) return "✅ Auto-post is already running.";
     state.active = true;
     saveState();
-    restartTimer();
-    return `✅ Auto-post started. Interval: ${state.intervalMs / 1000}s.`;
+    restartTimer(); // restarts all channels
+    return `✅ Auto-post started.`;
   }
 
   if (cmd === "stop") {
     if (!state.active) return "⏸️ Auto-post is already stopped.";
     state.active = false;
     saveState();
-    stopTimer();
+    stopTimer(); // stops all channels
     return "⏸️ Auto-post stopped.";
   }
 
   if (cmd === "status") {
-    const postList   = state.postChannels.join(", ")         || "(none)";
-    const manualList = (state.manualChannels||[]).join(", ") || "(none)";
-    const learnList  = state.learnChannels.join(", ")        || "(none)";
-    const cdInfo     = state.cooldownMessages > 0 ? `${state.cooldownMessages} msgs` : "off";
+    // Show this channel's specific settings
+    const intervalSecs = getChannelInterval(ch) / 1000;
+    const cooldown     = getChannelCooldown(ch);
+    const cdInfo       = cooldown > 0 ? `${cooldown} msgs` : "off";
+    const postList     = state.postChannels.join(", ")         || "(none)";
+    const manualList   = (state.manualChannels||[]).join(", ") || "(none)";
+    const learnList    = state.learnChannels.join(", ")        || "(none)";
     return (
-      `📊 Status: ${state.active ? "▶ running" : "⏸ stopped"} | ` +
-      `Interval: ${state.intervalMs / 1000}s | Cooldown: ${cdInfo} | ` +
+      `📊 [#${ch}] ${state.active ? "▶ running" : "⏸ stopped"} | ` +
+      `Interval: ${intervalSecs}s | Cooldown: ${cdInfo} | ` +
       `Lines: ${markov.size} (min: ${state.minCorpus}) | ` +
       `Auto: ${postList} | Manual: ${manualList} | Learn: ${learnList}`
     );
   }
 
+  // ── $interval — sets interval for THIS channel only ───────────────────────
   if (cmd === "interval") {
     const secs = parseInt(args[0]);
     if (isNaN(secs) || secs < 30) return `⚠️ Usage: ${PREFIX}interval <seconds> (minimum 30)`;
-    state.intervalMs = secs * 1000;
+    setChannelSetting(ch, "intervalMs", secs * 1000);
     saveState();
-    if (state.active) restartTimer();
-    return `⏱️ Interval set to ${secs}s.`;
+    if (state.active) restartTimer(ch);
+    return `⏱️ [#${ch}] Interval set to ${secs}s.`;
   }
 
+  // ── $cooldown — sets cooldown for THIS channel only ───────────────────────
   if (cmd === "cooldown") {
     const n = parseInt(args[0]);
     if (isNaN(n) || n < 0) return `⚠️ Usage: ${PREFIX}cooldown <number> (0 = off)`;
-    state.cooldownMessages = n;
+    setChannelSetting(ch, "cooldownMessages", n);
     saveState();
-    ctx.resetCooldownCounters();
-    return n === 0 ? `💬 Message cooldown disabled.` : `💬 Cooldown set to ${n} messages between bot posts.`;
+    resetCooldownCounters(ch);
+    return n === 0
+      ? `💬 [#${ch}] Cooldown disabled.`
+      : `💬 [#${ch}] Cooldown set to ${n} messages between bot posts.`;
   }
 
   if (cmd === "minlines") {
@@ -148,71 +164,72 @@ function handle(channel, tags, message, ctx) {
   }
 
   if (cmd === "join") {
-    const ch = normalise(args[0]);
-    if (!ch) return `⚠️ Usage: ${PREFIX}join <channel>`;
-    if (state.postChannels.includes(ch)) return `Already posting in #${ch}.`;
-    joinChannel(ch);
-    state.postChannels.push(ch);
+    const target = normalise(args[0]);
+    if (!target) return `⚠️ Usage: ${PREFIX}join <channel>`;
+    if (state.postChannels.includes(target)) return `Already posting in #${target}.`;
+    joinChannel(target);
+    state.postChannels.push(target);
     saveState();
-    return `✅ Joined #${ch} — will post there.`;
+    if (state.active) restartTimer(target);
+    return `✅ Joined #${target} — will post there.`;
   }
 
   if (cmd === "leave") {
-    const ch = normalise(args[0]);
-    if (!ch) return `⚠️ Usage: ${PREFIX}leave <channel>`;
-    const idx = state.postChannels.indexOf(ch);
-    if (idx === -1) return `Not currently posting in #${ch}.`;
-    leaveChannel(ch);
+    const target = normalise(args[0]);
+    if (!target) return `⚠️ Usage: ${PREFIX}leave <channel>`;
+    const idx = state.postChannels.indexOf(target);
+    if (idx === -1) return `Not currently posting in #${target}.`;
+    leaveChannel(target); // leaveChannel also calls stopTimer(ch)
     state.postChannels.splice(idx, 1);
     saveState();
-    return `👋 Left #${ch}.`;
+    return `👋 Left #${target}.`;
   }
 
   if (cmd === "manual") {
-    const ch = normalise(args[0]);
-    if (!ch) return `⚠️ Usage: ${PREFIX}manual <channel>`;
-    if (state.postChannels.includes(ch)) return `#${ch} is already a full post channel. Use ${PREFIX}leave first.`;
-    if (state.manualChannels.includes(ch)) return `Already in manual mode for #${ch}.`;
-    if (state.learnChannels.includes(ch)) {
-      state.learnChannels.splice(state.learnChannels.indexOf(ch), 1);
+    const target = normalise(args[0]);
+    if (!target) return `⚠️ Usage: ${PREFIX}manual <channel>`;
+    if (state.postChannels.includes(target)) return `#${target} is already a full post channel. Use ${PREFIX}leave first.`;
+    if (state.manualChannels.includes(target)) return `Already in manual mode for #${target}.`;
+    if (state.learnChannels.includes(target)) {
+      state.learnChannels.splice(state.learnChannels.indexOf(target), 1);
     } else {
-      joinChannel(ch);
+      joinChannel(target);
     }
-    state.manualChannels.push(ch);
+    state.manualChannels.push(target);
     saveState();
-    return `✅ Joined #${ch} in manual mode — won't auto-post. Use ${PREFIX}say to post.`;
+    return `✅ Joined #${target} in manual mode — won't auto-post. Use ${PREFIX}say to post.`;
   }
 
   if (cmd === "unmanual") {
-    const ch = normalise(args[0]);
-    if (!ch) return `⚠️ Usage: ${PREFIX}unmanual <channel>`;
-    const idx = state.manualChannels.indexOf(ch);
-    if (idx === -1) return `#${ch} is not in manual mode.`;
-    leaveChannel(ch);
+    const target = normalise(args[0]);
+    if (!target) return `⚠️ Usage: ${PREFIX}unmanual <channel>`;
+    const idx = state.manualChannels.indexOf(target);
+    if (idx === -1) return `#${target} is not in manual mode.`;
+    leaveChannel(target);
     state.manualChannels.splice(idx, 1);
     saveState();
-    return `👋 Left manual channel #${ch}.`;
+    return `👋 Left manual channel #${target}.`;
   }
 
   if (cmd === "addlearn") {
-    const ch = normalise(args[0]);
-    if (!ch) return `⚠️ Usage: ${PREFIX}addlearn <channel>`;
-    if (state.learnChannels.includes(ch) || state.postChannels.includes(ch)) return `Already in #${ch}.`;
-    joinChannel(ch);
-    state.learnChannels.push(ch);
+    const target = normalise(args[0]);
+    if (!target) return `⚠️ Usage: ${PREFIX}addlearn <channel>`;
+    if (state.learnChannels.includes(target) || state.postChannels.includes(target)) return `Already in #${target}.`;
+    joinChannel(target);
+    state.learnChannels.push(target);
     saveState();
-    return `📖 Now learning from #${ch} (listen-only).`;
+    return `📖 Now learning from #${target} (listen-only).`;
   }
 
   if (cmd === "removelearn") {
-    const ch = normalise(args[0]);
-    if (!ch) return `⚠️ Usage: ${PREFIX}removelearn <channel>`;
-    const idx = state.learnChannels.indexOf(ch);
-    if (idx === -1) return `Not learning from #${ch}.`;
-    leaveChannel(ch);
+    const target = normalise(args[0]);
+    if (!target) return `⚠️ Usage: ${PREFIX}removelearn <channel>`;
+    const idx = state.learnChannels.indexOf(target);
+    if (idx === -1) return `Not learning from #${target}.`;
+    leaveChannel(target);
     state.learnChannels.splice(idx, 1);
     saveState();
-    return `🚫 Stopped learning from #${ch}.`;
+    return `🚫 Stopped learning from #${target}.`;
   }
 
   if (cmd === "removeuser") {
