@@ -85,9 +85,10 @@ function allChannels() {
 // ── Twitch client ─────────────────────────────────────────────────────────────
 
 const client = new tmi.Client({
-  options:  { debug: false },
-  identity: { username: BOT_USERNAME, password: OAUTH_TOKEN },
-  channels: allChannels(),
+  options:    { debug: false },
+  connection: { reconnect: true, secure: true },
+  identity:   { username: BOT_USERNAME, password: OAUTH_TOKEN },
+  channels:   allChannels(),
 });
 
 // ── Timer ─────────────────────────────────────────────────────────────────────
@@ -120,7 +121,9 @@ function postNow(channel) {
   const msg = markov.generate({ minWords: 6, maxWords: 28 });
   if (!msg) return null;
   const target = channel.startsWith("#") ? channel : `#${channel}`;
-  client.say(target, msg);
+  client.say(target, msg).catch(err =>
+    console.warn(`⚠️  [${ts()}] say() failed on ${target}:`, err.message)
+  );
   msgCounters[ch] = 0;  // reset counter after posting
   console.log(`💬  [${ts()}] → ${target}: "${msg}"`);
   return msg;
@@ -214,12 +217,28 @@ client.on("message", (channel, tags, message, self) => {
 
   const reply = commands.handle(channel, tags, message, ctx);
   if (reply) {
-    client.say(channel, reply);
+    client.say(channel, reply).catch(err =>
+      console.warn(`⚠️  say() failed on ${channel}:`, err.message)
+    );
   }
 });
 
 client.on("disconnected", (reason) => {
-  console.warn(`⚡  Disconnected: ${reason}`);
+  console.warn(`⚡  Disconnected: ${reason} — tmi.js will attempt to reconnect.`);
+});
+
+client.on("reconnect", () => {
+  console.log(`🔄  Reconnecting to Twitch…`);
+});
+
+// ── Safety net — prevent Railway crashes on unhandled async errors ─────────────
+
+process.on("unhandledRejection", (reason) => {
+  console.error("⚠️  Unhandled rejection (continuing):", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("⚠️  Uncaught exception (continuing):", err.message);
 });
 
 // ── Connect ───────────────────────────────────────────────────────────────────
