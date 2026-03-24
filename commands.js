@@ -2,48 +2,29 @@
  * commands.js — All bot commands
  *
  * Auth tiers:
- *   1. OWNER ("shlbez")          — all commands
- *   2. allowedUsers (state)      — all commands
- *   3. Mods / VIPs in channel    — $say only
- *
- * Commands (prefix configurable, default $):
- *
- *   $help                      — list all commands
- *   $start                     — start auto-posting
- *   $stop                      — stop auto-posting
- *   $status                    — show current settings
- *   $say                       — force one Markov message right now
- *   $interval <seconds>        — set post interval (min 30s)
- *   $cooldown <messages>       — min chat messages between bot posts (0 = off)
- *   $minlines <number>         — set minimum lines before posting
- *   $join <channel>            — join a new channel to post in
- *   $leave <channel>           — leave a post channel
- *   $addlearn <channel>        — add a channel to learn from (no posting)
- *   $removelearn <channel>     — stop learning from a channel
- *   $channels                  — list all joined / learn channels
- *   $lines                     — show corpus size
- *   $adduser <username>        — grant full command access to a user
- *   $removeuser <username>     — revoke full command access
- *   $users                     — list all allowed users
+ *   1. OWNER ("shlbez")                          — all commands
+ *   2. Mods / VIPs / allowedUsers in channel     — $say, $adduser, $channels, $lines, $users
  */
 
 const PREFIX = process.env.CMD_PREFIX || "$";
+const OWNER  = "shlbez";
 
-// Only this user has permanent owner-level access
-const OWNER = "shlbez";
+function isOwner(tags) {
+  return (tags.username || "").toLowerCase() === OWNER;
+}
 
-// ── Auth helpers ──────────────────────────────────────────────────────────────
-
-function isOwnerOrAdmin(tags, state) {
+function isAllowedUser(tags, state) {
   const user = (tags.username || "").toLowerCase();
-  if (user === OWNER) return true;
-  if (state.allowedUsers && state.allowedUsers.includes(user)) return true;
-  return false;
+  return (state.allowedUsers || []).includes(user);
 }
 
 function isModOrVip(tags) {
   const badges = tags.badges || {};
   return !!(badges.moderator || tags.mod || badges.vip);
+}
+
+function hasLimitedAccess(tags, state) {
+  return isOwner(tags) || isAllowedUser(tags, state) || isModOrVip(tags);
 }
 
 function parseCommand(message) {
@@ -52,42 +33,56 @@ function parseCommand(message) {
   return { cmd: parts[0].toLowerCase(), args: parts.slice(1) };
 }
 
-/**
- * Handle an incoming message. Returns a reply string or null.
- * The bot module passes its live state and helpers in via `ctx`.
- */
 function handle(channel, tags, message, ctx) {
   const parsed = parseCommand(message);
   if (!parsed) return null;
 
   const { state } = ctx;
-  const admin  = isOwnerOrAdmin(tags, state);
-  const modvip = isModOrVip(tags);
 
   // Silently ignore anyone with no access at all
-  if (!admin && !modvip) return null;
+  if (!hasLimitedAccess(tags, state)) return null;
 
   const { cmd, args } = parsed;
-  const {
-    saveState,
-    markov,
-    restartTimer, stopTimer,
-    postNow,
-    joinChannel, leaveChannel,
-    addLearnChannel, removeLearnChannel,
-  } = ctx;
+  const { saveState, markov, restartTimer, stopTimer, postNow, joinChannel, leaveChannel } = ctx;
 
-  // ── $say — available to mods/VIPs too ────────────────────────────────────
+  // ── Commands available to everyone with any access ────────────────────────
+
   if (cmd === "say") {
     const result = postNow(channel);
     if (!result) return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`;
-    return null; // postNow already sent the message
+    return null;
   }
 
-  // Everything below requires admin (owner or allowed user)
-  if (!admin) return null;
+  if (cmd === "adduser") {
+    const user = (args[0] || "").toLowerCase().trim();
+    if (!user) return `⚠️ Usage: ${PREFIX}adduser <username>`;
+    if (user === OWNER) return `${OWNER} is already the owner.`;
+    if (!state.allowedUsers) state.allowedUsers = [];
+    if (state.allowedUsers.includes(user)) return `${user} already has access.`;
+    state.allowedUsers.push(user);
+    saveState();
+    return `✅ ${user} can now use bot commands.`;
+  }
 
-  // ── $help ─────────────────────────────────────────────────────────────────
+  if (cmd === "channels") {
+    const postList   = state.postChannels.join(", ")         || "(none)";
+    const manualList = (state.manualChannels||[]).join(", ") || "(none)";
+    const learnList  = state.learnChannels.join(", ")        || "(none)";
+    return `📡 Auto-posting: ${postList} | Manual-only: ${manualList} | Learning: ${learnList}`;
+  }
+
+  if (cmd === "lines") {
+    return `📚 Lines: ${markov.size} trained (min to post: ${state.minCorpus}).`;
+  }
+
+  if (cmd === "users") {
+    const list = (state.allowedUsers || []).join(", ") || "(none)";
+    return `👥 Owner: ${OWNER} | Allowed users: ${list} | Mods/VIPs can use ${PREFIX}say + basic commands`;
+  }
+
+  // ── Everything below is owner-only ───────────────────────────────────────
+  if (!isOwner(tags)) return null;
+
   if (cmd === "help") {
     return (
       `Commands (${PREFIX}): ` +
@@ -97,7 +92,6 @@ function handle(channel, tags, message, ctx) {
     );
   }
 
-  // ── $start ────────────────────────────────────────────────────────────────
   if (cmd === "start") {
     if (state.active) return "✅ Auto-post is already running.";
     state.active = true;
@@ -106,7 +100,6 @@ function handle(channel, tags, message, ctx) {
     return `✅ Auto-post started. Interval: ${state.intervalMs / 1000}s.`;
   }
 
-  // ── $stop ─────────────────────────────────────────────────────────────────
   if (cmd === "stop") {
     if (!state.active) return "⏸️ Auto-post is already stopped.";
     state.active = false;
@@ -115,24 +108,19 @@ function handle(channel, tags, message, ctx) {
     return "⏸️ Auto-post stopped.";
   }
 
-  // ── $status ───────────────────────────────────────────────────────────────
   if (cmd === "status") {
     const postList   = state.postChannels.join(", ")         || "(none)";
     const manualList = (state.manualChannels||[]).join(", ") || "(none)";
     const learnList  = state.learnChannels.join(", ")        || "(none)";
-    const cdInfo     = state.cooldownMessages > 0
-      ? `${state.cooldownMessages} msgs`
-      : "off";
+    const cdInfo     = state.cooldownMessages > 0 ? `${state.cooldownMessages} msgs` : "off";
     return (
       `📊 Status: ${state.active ? "▶ running" : "⏸ stopped"} | ` +
-      `Interval: ${state.intervalMs / 1000}s | ` +
-      `Cooldown: ${cdInfo} | ` +
+      `Interval: ${state.intervalMs / 1000}s | Cooldown: ${cdInfo} | ` +
       `Lines: ${markov.size} (min: ${state.minCorpus}) | ` +
       `Auto: ${postList} | Manual: ${manualList} | Learn: ${learnList}`
     );
   }
 
-  // ── $interval <seconds> ──────────────────────────────────────────────────
   if (cmd === "interval") {
     const secs = parseInt(args[0]);
     if (isNaN(secs) || secs < 30) return `⚠️ Usage: ${PREFIX}interval <seconds> (minimum 30)`;
@@ -142,18 +130,15 @@ function handle(channel, tags, message, ctx) {
     return `⏱️ Interval set to ${secs}s.`;
   }
 
-  // ── $cooldown <messages> ─────────────────────────────────────────────────
   if (cmd === "cooldown") {
     const n = parseInt(args[0]);
     if (isNaN(n) || n < 0) return `⚠️ Usage: ${PREFIX}cooldown <number> (0 = off)`;
     state.cooldownMessages = n;
     saveState();
     ctx.resetCooldownCounters();
-    if (n === 0) return `💬 Message cooldown disabled.`;
-    return `💬 Cooldown set to ${n} messages between bot posts.`;
+    return n === 0 ? `💬 Message cooldown disabled.` : `💬 Cooldown set to ${n} messages between bot posts.`;
   }
 
-  // ── $minlines <n> ────────────────────────────────────────────────────────
   if (cmd === "minlines") {
     const n = parseInt(args[0]);
     if (isNaN(n) || n < 1) return `⚠️ Usage: ${PREFIX}minlines <number>`;
@@ -162,7 +147,6 @@ function handle(channel, tags, message, ctx) {
     return `📚 Minimum lines set to ${n} (current: ${markov.size}).`;
   }
 
-  // ── $join <channel> ──────────────────────────────────────────────────────
   if (cmd === "join") {
     const ch = normalise(args[0]);
     if (!ch) return `⚠️ Usage: ${PREFIX}join <channel>`;
@@ -173,7 +157,6 @@ function handle(channel, tags, message, ctx) {
     return `✅ Joined #${ch} — will post there.`;
   }
 
-  // ── $leave <channel> ─────────────────────────────────────────────────────
   if (cmd === "leave") {
     const ch = normalise(args[0]);
     if (!ch) return `⚠️ Usage: ${PREFIX}leave <channel>`;
@@ -185,7 +168,6 @@ function handle(channel, tags, message, ctx) {
     return `👋 Left #${ch}.`;
   }
 
-  // ── $manual <channel> ────────────────────────────────────────────────────
   if (cmd === "manual") {
     const ch = normalise(args[0]);
     if (!ch) return `⚠️ Usage: ${PREFIX}manual <channel>`;
@@ -198,10 +180,9 @@ function handle(channel, tags, message, ctx) {
     }
     state.manualChannels.push(ch);
     saveState();
-    return `✅ Joined #${ch} in manual mode — I'll respond to commands but won't auto-post. Use ${PREFIX}say to post.`;
+    return `✅ Joined #${ch} in manual mode — won't auto-post. Use ${PREFIX}say to post.`;
   }
 
-  // ── $unmanual <channel> ──────────────────────────────────────────────────
   if (cmd === "unmanual") {
     const ch = normalise(args[0]);
     if (!ch) return `⚠️ Usage: ${PREFIX}unmanual <channel>`;
@@ -213,19 +194,16 @@ function handle(channel, tags, message, ctx) {
     return `👋 Left manual channel #${ch}.`;
   }
 
-  // ── $addlearn <channel> ──────────────────────────────────────────────────
   if (cmd === "addlearn") {
     const ch = normalise(args[0]);
     if (!ch) return `⚠️ Usage: ${PREFIX}addlearn <channel>`;
-    if (state.learnChannels.includes(ch) || state.postChannels.includes(ch))
-      return `Already in #${ch}.`;
+    if (state.learnChannels.includes(ch) || state.postChannels.includes(ch)) return `Already in #${ch}.`;
     joinChannel(ch);
     state.learnChannels.push(ch);
     saveState();
     return `📖 Now learning from #${ch} (listen-only).`;
   }
 
-  // ── $removelearn <channel> ───────────────────────────────────────────────
   if (cmd === "removelearn") {
     const ch = normalise(args[0]);
     if (!ch) return `⚠️ Usage: ${PREFIX}removelearn <channel>`;
@@ -237,32 +215,6 @@ function handle(channel, tags, message, ctx) {
     return `🚫 Stopped learning from #${ch}.`;
   }
 
-  // ── $channels ─────────────────────────────────────────────────────────────
-  if (cmd === "channels") {
-    const postList   = state.postChannels.join(", ")         || "(none)";
-    const manualList = (state.manualChannels||[]).join(", ") || "(none)";
-    const learnList  = state.learnChannels.join(", ")        || "(none)";
-    return `📡 Auto-posting: ${postList} | Manual-only: ${manualList} | Learning: ${learnList}`;
-  }
-
-  // ── $lines ────────────────────────────────────────────────────────────────
-  if (cmd === "lines") {
-    return `📚 Lines: ${markov.size} trained (min to post: ${state.minCorpus}).`;
-  }
-
-  // ── $adduser <username> ──────────────────────────────────────────────────
-  if (cmd === "adduser") {
-    const user = (args[0] || "").toLowerCase().trim();
-    if (!user) return `⚠️ Usage: ${PREFIX}adduser <username>`;
-    if (user === OWNER) return `${OWNER} is already the owner.`;
-    if (!state.allowedUsers) state.allowedUsers = [];
-    if (state.allowedUsers.includes(user)) return `${user} already has access.`;
-    state.allowedUsers.push(user);
-    saveState();
-    return `✅ ${user} can now use all bot commands.`;
-  }
-
-  // ── $removeuser <username> ───────────────────────────────────────────────
   if (cmd === "removeuser") {
     const user = (args[0] || "").toLowerCase().trim();
     if (!user) return `⚠️ Usage: ${PREFIX}removeuser <username>`;
@@ -274,13 +226,7 @@ function handle(channel, tags, message, ctx) {
     return `🚫 Removed ${user}'s access.`;
   }
 
-  // ── $users ────────────────────────────────────────────────────────────────
-  if (cmd === "users") {
-    const list = (state.allowedUsers || []).join(", ") || "(none)";
-    return `👥 Owner: ${OWNER} | Allowed users: ${list} | Mods/VIPs in channel can use ${PREFIX}say`;
-  }
-
-  return null; // unknown command — ignore
+  return null;
 }
 
 function normalise(ch) {
@@ -288,4 +234,4 @@ function normalise(ch) {
   return ch.replace(/^#/, "").toLowerCase().trim();
 }
 
-module.exports = { handle, isOwnerOrAdmin, isModOrVip, PREFIX };
+module.exports = { handle, isOwner, isAllowedUser, isModOrVip, PREFIX };
