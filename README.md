@@ -3,23 +3,8 @@
 A Twitch bot that blends in as a viewer by posting Markov-generated chat messages —
 with a full live command system so you can control everything from Twitch chat.
 
----
 
-## Quick Start
-
-```bash
-# 1. Install
-npm install
-
-# 2. Configure
-cp .env.example .env
-# Edit .env — add your bot username, OAuth token, and channel
-
-# 3. Run
-npm start
-```
-
-Get your OAuth token at **https://twitchapps.com/tmi/** (log in as the bot account first).
+Get your OAuth token at **https://twitchapps.com/tmi/**
 
 ---
 
