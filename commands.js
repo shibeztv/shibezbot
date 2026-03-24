@@ -16,8 +16,8 @@
  */
 
 
-const PREFIX   = "&";  // used in help/usage strings
-const PREFIXES = new Set(["&", "$", "?"]);
+const PREFIX   = "?";  // used in help/usage strings
+const PREFIXES = new Set(["?"]);
 const OWNER  = "shlbez";
 
 function isOwner(tags) {
