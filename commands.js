@@ -64,7 +64,7 @@ function handle(channel, tags, message, ctx) {
     return (
       `Commands (${PREFIX}): ` +
       `start | stop | status | say | interval <s> | cooldown <n> | minlines <n> | ` +
-      `join <ch> | leave <ch> | addlearn <ch> | removelearn <ch> | channels | lines`
+      `join <ch> | leave <ch> | manual <ch> | unmanual <ch> | addlearn <ch> | removelearn <ch> | channels | lines`
     );
   }
 
@@ -88,9 +88,10 @@ function handle(channel, tags, message, ctx) {
 
   // ── $status ────────────────────────────────────────────────────────────────
   if (cmd === "status") {
-    const postList  = state.postChannels.join(", ")  || "(none)";
-    const learnList = state.learnChannels.join(", ") || "(none)";
-    const cdInfo    = state.cooldownMessages > 0
+    const postList   = state.postChannels.join(", ")        || "(none)";
+    const manualList = (state.manualChannels||[]).join(", ") || "(none)";
+    const learnList  = state.learnChannels.join(", ")       || "(none)";
+    const cdInfo     = state.cooldownMessages > 0
       ? `${state.cooldownMessages} msgs`
       : "off";
     return (
@@ -98,7 +99,7 @@ function handle(channel, tags, message, ctx) {
       `Interval: ${state.intervalMs / 1000}s | ` +
       `Cooldown: ${cdInfo} | ` +
       `Lines: ${markov.size} (min: ${state.minCorpus}) | ` +
-      `Posting in: ${postList} | Learning from: ${learnList}`
+      `Auto: ${postList} | Manual: ${manualList} | Learn: ${learnList}`
     );
   }
 
@@ -164,6 +165,36 @@ function handle(channel, tags, message, ctx) {
     return `👋 Left #${ch}.`;
   }
 
+  // ── $manual <channel> ────────────────────────────────────────────────────
+  // Join channel + accept commands there, but NEVER auto-post — only $say works
+  if (cmd === "manual") {
+    const ch = normalise(args[0]);
+    if (!ch) return `⚠️ Usage: ${PREFIX}manual <channel>`;
+    if (state.postChannels.includes(ch)) return `#${ch} is already a full post channel. Use ${PREFIX}leave first.`;
+    if (state.manualChannels.includes(ch)) return `Already in manual mode for #${ch}.`;
+    if (state.learnChannels.includes(ch)) {
+      // Upgrade from learn-only to manual
+      state.learnChannels.splice(state.learnChannels.indexOf(ch), 1);
+    } else {
+      joinChannel(ch);
+    }
+    state.manualChannels.push(ch);
+    saveState();
+    return `✅ Joined #${ch} in manual mode — I'll learn there and respond to commands, but won't auto-post. Use ${PREFIX}say in that channel to post.`;
+  }
+
+  // ── $unmanual <channel> ───────────────────────────────────────────────────
+  if (cmd === "unmanual") {
+    const ch = normalise(args[0]);
+    if (!ch) return `⚠️ Usage: ${PREFIX}unmanual <channel>`;
+    const idx = state.manualChannels.indexOf(ch);
+    if (idx === -1) return `#${ch} is not in manual mode.`;
+    leaveChannel(ch);
+    state.manualChannels.splice(idx, 1);
+    saveState();
+    return `👋 Left manual channel #${ch}.`;
+  }
+
   // ── $addlearn <channel> ───────────────────────────────────────────────────
   if (cmd === "addlearn") {
     const ch = normalise(args[0]);
@@ -190,9 +221,10 @@ function handle(channel, tags, message, ctx) {
 
   // ── $channels ─────────────────────────────────────────────────────────────
   if (cmd === "channels") {
-    const postList  = state.postChannels.join(", ")  || "(none)";
-    const learnList = state.learnChannels.join(", ") || "(none)";
-    return `📡 Posting: ${postList} | Learning: ${learnList}`;
+    const postList   = state.postChannels.join(", ")   || "(none)";
+    const manualList = (state.manualChannels||[]).join(", ") || "(none)";
+    const learnList  = state.learnChannels.join(", ")  || "(none)";
+    return `📡 Auto-posting: ${postList} | Manual-only: ${manualList} | Learning: ${learnList}`;
   }
 
   // ── $lines ────────────────────────────────────────────────────────────────

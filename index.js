@@ -79,7 +79,7 @@ function cooldownReady(ch) {
 
 
 function allChannels() {
-  return [...new Set([...state.postChannels, ...state.learnChannels])];
+  return [...new Set([...state.postChannels, ...state.learnChannels, ...(state.manualChannels||[])])];
 }
 
 // ── Twitch client ─────────────────────────────────────────────────────────────
@@ -201,19 +201,20 @@ client.on("message", (channel, tags, message, self) => {
 
   const username = (tags["display-name"] || tags.username || "").toLowerCase();
   const ch       = channel.replace(/^#/, "");
+  const manualChannels = state.manualChannels || [];
 
-  // Always try to learn (from any joined channel)
-  if (state.postChannels.includes(ch) || state.learnChannels.includes(ch)) {
+  // Learn from all joined channels (post, manual, and learn)
+  if (state.postChannels.includes(ch) || state.learnChannels.includes(ch) || manualChannels.includes(ch)) {
     learnMessage(username, message);
   }
 
-  // Count non-bot messages in post channels for cooldown tracking
+  // Count messages for cooldown — only in auto-post channels
   if (state.postChannels.includes(ch)) {
     incrementCounter(ch);
   }
 
-  // Only handle commands in post-channels (not listen-only channels)
-  if (!state.postChannels.includes(ch)) return;
+  // Handle commands in post channels AND manual channels (but not learn-only)
+  if (!state.postChannels.includes(ch) && !manualChannels.includes(ch)) return;
 
   const reply = commands.handle(channel, tags, message, ctx);
   if (reply) {

@@ -11,6 +11,7 @@ const STATE_FILE = path.resolve("./bot_state.json");
 const DEFAULTS = {
   postChannels:      [],
   learnChannels:     [],
+  manualChannels:    [],  // joined + commands work, but never auto-posts — only posts via $say
   intervalMs:        300_000,
   minCorpus:         50,
   active:            true,
