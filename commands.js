@@ -1,7 +1,10 @@
 /**
  * commands.js — All bot commands
  *
- * Only "shlbez" can use these commands.
+ * Auth tiers:
+ *   1. OWNER ("shlbez")          — all commands
+ *   2. allowedUsers (state)      — all commands
+ *   3. Mods / VIPs in channel    — $say only
  *
  * Commands (prefix configurable, default $):
  *
@@ -19,15 +22,28 @@
  *   $removelearn <channel>     — stop learning from a channel
  *   $channels                  — list all joined / learn channels
  *   $lines                     — show corpus size
+ *   $adduser <username>        — grant full command access to a user
+ *   $removeuser <username>     — revoke full command access
+ *   $users                     — list all allowed users
  */
 
 const PREFIX = process.env.CMD_PREFIX || "$";
 
-// Only this user can run commands
+// Only this user has permanent owner-level access
 const OWNER = "shlbez";
 
-function isAuthorized(tags) {
-  return (tags.username || "").toLowerCase() === OWNER;
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+
+function isOwnerOrAdmin(tags, state) {
+  const user = (tags.username || "").toLowerCase();
+  if (user === OWNER) return true;
+  if (state.allowedUsers && state.allowedUsers.includes(user)) return true;
+  return false;
+}
+
+function isModOrVip(tags) {
+  const badges = tags.badges || {};
+  return !!(badges.moderator || tags.mod || badges.vip);
 }
 
 function parseCommand(message) {
@@ -44,14 +60,16 @@ function handle(channel, tags, message, ctx) {
   const parsed = parseCommand(message);
   if (!parsed) return null;
 
-  if (!isAuthorized(tags)) {
-    // Silently ignore unauthorised users — don't tip off the prefix
-    return null;
-  }
+  const { state } = ctx;
+  const admin  = isOwnerOrAdmin(tags, state);
+  const modvip = isModOrVip(tags);
+
+  // Silently ignore anyone with no access at all
+  if (!admin && !modvip) return null;
 
   const { cmd, args } = parsed;
   const {
-    state, saveState,
+    saveState,
     markov,
     restartTimer, stopTimer,
     postNow,
@@ -59,16 +77,27 @@ function handle(channel, tags, message, ctx) {
     addLearnChannel, removeLearnChannel,
   } = ctx;
 
-  // ── $help ──────────────────────────────────────────────────────────────────
+  // ── $say — available to mods/VIPs too ────────────────────────────────────
+  if (cmd === "say") {
+    const result = postNow(channel);
+    if (!result) return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`;
+    return null; // postNow already sent the message
+  }
+
+  // Everything below requires admin (owner or allowed user)
+  if (!admin) return null;
+
+  // ── $help ─────────────────────────────────────────────────────────────────
   if (cmd === "help") {
     return (
       `Commands (${PREFIX}): ` +
       `start | stop | status | say | interval <s> | cooldown <n> | minlines <n> | ` +
-      `join <ch> | leave <ch> | manual <ch> | unmanual <ch> | addlearn <ch> | removelearn <ch> | channels | lines`
+      `join <ch> | leave <ch> | manual <ch> | unmanual <ch> | addlearn <ch> | removelearn <ch> | ` +
+      `channels | lines | adduser <u> | removeuser <u> | users`
     );
   }
 
-  // ── $start ─────────────────────────────────────────────────────────────────
+  // ── $start ────────────────────────────────────────────────────────────────
   if (cmd === "start") {
     if (state.active) return "✅ Auto-post is already running.";
     state.active = true;
@@ -77,7 +106,7 @@ function handle(channel, tags, message, ctx) {
     return `✅ Auto-post started. Interval: ${state.intervalMs / 1000}s.`;
   }
 
-  // ── $stop ──────────────────────────────────────────────────────────────────
+  // ── $stop ─────────────────────────────────────────────────────────────────
   if (cmd === "stop") {
     if (!state.active) return "⏸️ Auto-post is already stopped.";
     state.active = false;
@@ -86,11 +115,11 @@ function handle(channel, tags, message, ctx) {
     return "⏸️ Auto-post stopped.";
   }
 
-  // ── $status ────────────────────────────────────────────────────────────────
+  // ── $status ───────────────────────────────────────────────────────────────
   if (cmd === "status") {
-    const postList   = state.postChannels.join(", ")        || "(none)";
+    const postList   = state.postChannels.join(", ")         || "(none)";
     const manualList = (state.manualChannels||[]).join(", ") || "(none)";
-    const learnList  = state.learnChannels.join(", ")       || "(none)";
+    const learnList  = state.learnChannels.join(", ")        || "(none)";
     const cdInfo     = state.cooldownMessages > 0
       ? `${state.cooldownMessages} msgs`
       : "off";
@@ -103,14 +132,7 @@ function handle(channel, tags, message, ctx) {
     );
   }
 
-  // ── $say ───────────────────────────────────────────────────────────────────
-  if (cmd === "say") {
-    const result = postNow(channel);
-    if (!result) return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`;
-    return null; // postNow already sent the message
-  }
-
-  // ── $interval <seconds> ───────────────────────────────────────────────────
+  // ── $interval <seconds> ──────────────────────────────────────────────────
   if (cmd === "interval") {
     const secs = parseInt(args[0]);
     if (isNaN(secs) || secs < 30) return `⚠️ Usage: ${PREFIX}interval <seconds> (minimum 30)`;
@@ -120,9 +142,7 @@ function handle(channel, tags, message, ctx) {
     return `⏱️ Interval set to ${secs}s.`;
   }
 
-  // ── $cooldown <messages> ──────────────────────────────────────────────────
-  // Sets how many chat messages from other users must appear before the bot
-  // is allowed to post again. 0 disables the cooldown.
+  // ── $cooldown <messages> ─────────────────────────────────────────────────
   if (cmd === "cooldown") {
     const n = parseInt(args[0]);
     if (isNaN(n) || n < 0) return `⚠️ Usage: ${PREFIX}cooldown <number> (0 = off)`;
@@ -133,7 +153,7 @@ function handle(channel, tags, message, ctx) {
     return `💬 Cooldown set to ${n} messages between bot posts.`;
   }
 
-  // ── $minlines <n> ─────────────────────────────────────────────────────────
+  // ── $minlines <n> ────────────────────────────────────────────────────────
   if (cmd === "minlines") {
     const n = parseInt(args[0]);
     if (isNaN(n) || n < 1) return `⚠️ Usage: ${PREFIX}minlines <number>`;
@@ -142,7 +162,7 @@ function handle(channel, tags, message, ctx) {
     return `📚 Minimum lines set to ${n} (current: ${markov.size}).`;
   }
 
-  // ── $join <channel> ───────────────────────────────────────────────────────
+  // ── $join <channel> ──────────────────────────────────────────────────────
   if (cmd === "join") {
     const ch = normalise(args[0]);
     if (!ch) return `⚠️ Usage: ${PREFIX}join <channel>`;
@@ -153,7 +173,7 @@ function handle(channel, tags, message, ctx) {
     return `✅ Joined #${ch} — will post there.`;
   }
 
-  // ── $leave <channel> ──────────────────────────────────────────────────────
+  // ── $leave <channel> ─────────────────────────────────────────────────────
   if (cmd === "leave") {
     const ch = normalise(args[0]);
     if (!ch) return `⚠️ Usage: ${PREFIX}leave <channel>`;
@@ -166,24 +186,22 @@ function handle(channel, tags, message, ctx) {
   }
 
   // ── $manual <channel> ────────────────────────────────────────────────────
-  // Join channel + accept commands there, but NEVER auto-post — only $say works
   if (cmd === "manual") {
     const ch = normalise(args[0]);
     if (!ch) return `⚠️ Usage: ${PREFIX}manual <channel>`;
     if (state.postChannels.includes(ch)) return `#${ch} is already a full post channel. Use ${PREFIX}leave first.`;
     if (state.manualChannels.includes(ch)) return `Already in manual mode for #${ch}.`;
     if (state.learnChannels.includes(ch)) {
-      // Upgrade from learn-only to manual
       state.learnChannels.splice(state.learnChannels.indexOf(ch), 1);
     } else {
       joinChannel(ch);
     }
     state.manualChannels.push(ch);
     saveState();
-    return `✅ Joined #${ch} in manual mode — I'll learn there and respond to commands, but won't auto-post. Use ${PREFIX}say in that channel to post.`;
+    return `✅ Joined #${ch} in manual mode — I'll respond to commands but won't auto-post. Use ${PREFIX}say to post.`;
   }
 
-  // ── $unmanual <channel> ───────────────────────────────────────────────────
+  // ── $unmanual <channel> ──────────────────────────────────────────────────
   if (cmd === "unmanual") {
     const ch = normalise(args[0]);
     if (!ch) return `⚠️ Usage: ${PREFIX}unmanual <channel>`;
@@ -195,7 +213,7 @@ function handle(channel, tags, message, ctx) {
     return `👋 Left manual channel #${ch}.`;
   }
 
-  // ── $addlearn <channel> ───────────────────────────────────────────────────
+  // ── $addlearn <channel> ──────────────────────────────────────────────────
   if (cmd === "addlearn") {
     const ch = normalise(args[0]);
     if (!ch) return `⚠️ Usage: ${PREFIX}addlearn <channel>`;
@@ -207,7 +225,7 @@ function handle(channel, tags, message, ctx) {
     return `📖 Now learning from #${ch} (listen-only).`;
   }
 
-  // ── $removelearn <channel> ────────────────────────────────────────────────
+  // ── $removelearn <channel> ───────────────────────────────────────────────
   if (cmd === "removelearn") {
     const ch = normalise(args[0]);
     if (!ch) return `⚠️ Usage: ${PREFIX}removelearn <channel>`;
@@ -221,15 +239,45 @@ function handle(channel, tags, message, ctx) {
 
   // ── $channels ─────────────────────────────────────────────────────────────
   if (cmd === "channels") {
-    const postList   = state.postChannels.join(", ")   || "(none)";
+    const postList   = state.postChannels.join(", ")         || "(none)";
     const manualList = (state.manualChannels||[]).join(", ") || "(none)";
-    const learnList  = state.learnChannels.join(", ")  || "(none)";
+    const learnList  = state.learnChannels.join(", ")        || "(none)";
     return `📡 Auto-posting: ${postList} | Manual-only: ${manualList} | Learning: ${learnList}`;
   }
 
   // ── $lines ────────────────────────────────────────────────────────────────
   if (cmd === "lines") {
     return `📚 Lines: ${markov.size} trained (min to post: ${state.minCorpus}).`;
+  }
+
+  // ── $adduser <username> ──────────────────────────────────────────────────
+  if (cmd === "adduser") {
+    const user = (args[0] || "").toLowerCase().trim();
+    if (!user) return `⚠️ Usage: ${PREFIX}adduser <username>`;
+    if (user === OWNER) return `${OWNER} is already the owner.`;
+    if (!state.allowedUsers) state.allowedUsers = [];
+    if (state.allowedUsers.includes(user)) return `${user} already has access.`;
+    state.allowedUsers.push(user);
+    saveState();
+    return `✅ ${user} can now use all bot commands.`;
+  }
+
+  // ── $removeuser <username> ───────────────────────────────────────────────
+  if (cmd === "removeuser") {
+    const user = (args[0] || "").toLowerCase().trim();
+    if (!user) return `⚠️ Usage: ${PREFIX}removeuser <username>`;
+    if (!state.allowedUsers) return `${user} doesn't have access.`;
+    const idx = state.allowedUsers.indexOf(user);
+    if (idx === -1) return `${user} doesn't have access.`;
+    state.allowedUsers.splice(idx, 1);
+    saveState();
+    return `🚫 Removed ${user}'s access.`;
+  }
+
+  // ── $users ────────────────────────────────────────────────────────────────
+  if (cmd === "users") {
+    const list = (state.allowedUsers || []).join(", ") || "(none)";
+    return `👥 Owner: ${OWNER} | Allowed users: ${list} | Mods/VIPs in channel can use ${PREFIX}say`;
   }
 
   return null; // unknown command — ignore
@@ -240,4 +288,4 @@ function normalise(ch) {
   return ch.replace(/^#/, "").toLowerCase().trim();
 }
 
-module.exports = { handle, isAuthorized, PREFIX };
+module.exports = { handle, isOwnerOrAdmin, isModOrVip, PREFIX };

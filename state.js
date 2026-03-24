@@ -11,11 +11,12 @@ const STATE_FILE = path.resolve(process.env.DATA_DIR || ".", "bot_state.json");
 const DEFAULTS = {
   postChannels:      [],
   learnChannels:     [],
-  manualChannels:    [],  // joined + commands work, but never auto-posts — only posts via $say
+  manualChannels:    [],
+  allowedUsers:      [],  // users granted full command access via $adduser
   intervalMs:        300_000,
   minCorpus:         50,
   active:            true,
-  cooldownMessages:  0,   // 0 = off; N = require N other-user messages before bot posts again
+  cooldownMessages:  0,
 };
 
 function load() {
