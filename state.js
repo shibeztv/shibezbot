@@ -17,6 +17,7 @@ const DEFAULTS = {
   cooldownMessages: 0,        // global default cooldown
   minCorpus:        50,
   active:           true,
+  greeterEnabled:   false,
 };
 
 function load() {

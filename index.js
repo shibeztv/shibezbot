@@ -287,13 +287,26 @@ function leaveChannel(ch) {
 
 const newLines = [];
 
+// ── Per-user tracking ─────────────────────────────────────────────────────────
+
+const userLastMessage = {};        // { username: "last message text" }
+const userMessages    = {};        // { username: ["msg1", "msg2", ...] } (capped at 150)
+const USER_MSG_CAP = 150;
+
 function learnMessage(username, message) {
   if (IGNORE_BOTS.includes(username.toLowerCase())) return;
   if (username.toLowerCase() === BOT_USERNAME.toLowerCase()) return;
-  if (message.startsWith("!") || message.startsWith("/") || message.startsWith("$")) return;
+  if (message.startsWith("!") || message.startsWith("/") || message.startsWith("$") || message.startsWith("&")) return;
   if (message.length < 10) return;
   markov.train(message);
   newLines.push(message.replace(/[\r\n]/g, " "));
+
+  // Track per-user messages for &markov and &mock
+  const u = username.toLowerCase();
+  userLastMessage[u] = message;
+  if (!userMessages[u]) userMessages[u] = [];
+  userMessages[u].push(message);
+  if (userMessages[u].length > USER_MSG_CAP) userMessages[u].shift();
 }
 
 setInterval(() => {
@@ -315,6 +328,8 @@ const ctx = {
   resetCooldownCounters,
   getChannelInterval, getChannelCooldown, setChannelSetting,
   helixGet,
+  userLastMessage,
+  userMessages,
   addLearnChannel: (ch) => {
     if (!state.learnChannels.includes(ch)) state.learnChannels.push(ch);
   },
@@ -351,6 +366,21 @@ client.on("message", (channel, tags, message, self) => {
   }
 
   if (state.postChannels.includes(ch)) incrementCounter(ch);
+
+  // ── First-message greeter (uses Twitch native first-msg tag) ────────────
+  if (
+    state.greeterEnabled &&
+    state.postChannels.includes(ch) &&
+    tags["first-msg"] === "1" &&
+    !IGNORE_BOTS.includes(username)
+  ) {
+    if (markov.size >= state.minCorpus) {
+      const greeting = markov.generate({ minWords: 5, maxWords: 18 });
+      if (greeting) {
+        client.say(channel, `@${username} ${greeting}`).catch(() => {});
+      }
+    }
+  }
 
   if (!state.postChannels.includes(ch) && !manualChannels.includes(ch)) return;
 

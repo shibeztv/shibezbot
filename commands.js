@@ -3,20 +3,20 @@
  *
  * Auth tiers:
  *   1. OWNER ("shlbez")                          — all commands
- *   2. Mods / VIPs / allowedUsers in channel     — $say, $adduser, $channels, $lines, $users
- *   3. Broadcaster of the channel                — $start, $stop, $status, $say, $interval,
- *                                                   $cooldown, $minlines, $channels, $lines,
- *                                                   $adduser, $users, $removeme
+ *   2. Mods / VIPs / allowedUsers in channel     — &say, &adduser, &channels, &lines, &users
+ *   3. Broadcaster of the channel                — &start, &stop, &status, &say, &interval,
+ *                                                   &cooldown, &minlines, &channels, &lines,
+ *                                                   &adduser, &users, &removeme
  *
  * Broadcaster commands are always scoped to their own channel only.
- * $start / $stop for a broadcaster pause/resume only their channel — the global
+ * &start / &stop for a broadcaster pause/resume only their channel — the global
  * active flag (controlled by the owner) is not touched.
  *
- * $interval and $cooldown are per-channel — they only affect the channel the command is typed in.
+ * &interval and &cooldown are per-channel — they only affect the channel the command is typed in.
  */
 
 
-const PREFIX = process.env.CMD_PREFIX || "$";
+const PREFIX = process.env.CMD_PREFIX || "&";
 const OWNER  = "shlbez";
 
 function isOwner(tags) {
@@ -81,6 +81,59 @@ function handle(channel, tags, message, ctx) {
     const result = postNow(channel);
     if (!result) return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`;
     return null;
+  }
+
+  // ── Public commands (any viewer) ─────────────────────────────────────────
+
+  if (cmd === "8ball") {
+    const RESPONSES = [
+      "It is certain.", "Without a doubt.", "Yes, definitely.", "You may rely on it.",
+      "As I see it, yes.", "Most likely.", "Outlook good.", "Yes.",
+      "Signs point to yes.", "Reply hazy, try again.", "Ask again later.",
+      "Better not tell you now.", "Cannot predict now.", "Don't count on it.",
+      "My reply is no.", "My sources say no.", "Outlook not so good.", "Very doubtful.",
+    ];
+    // 1-in-4 chance to give a Markov answer instead for extra chaos
+    if (markov.size >= state.minCorpus && Math.random() < 0.25) {
+      const markovAnswer = markov.generate({ minWords: 4, maxWords: 14 });
+      if (markovAnswer) return `🎱 ${markovAnswer}`;
+    }
+    return `🎱 ${RESPONSES[Math.floor(Math.random() * RESPONSES.length)]}`;
+  }
+
+  if (cmd === "mock") {
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}mock <username>`;
+    const last = ctx.userLastMessage[target];
+    if (!last) return `🤷 No messages from ${target} yet.`;
+    const mocked = last.split("").map((c, i) =>
+      i % 2 === 0 ? c.toLowerCase() : c.toUpperCase()
+    ).join("");
+    return `@${target} ${mocked}`;
+  }
+
+  if (cmd === "markov") {
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}markov <username>`;
+    const msgs = ctx.userMessages[target];
+    if (!msgs || msgs.length < 5) return `📚 Not enough messages from ${target} yet (need at least 5).`;
+    const MarkovChain = require("./markov");
+    const userChain = new MarkovChain(2);
+    userChain.trainBulk(msgs);
+    const sentence = userChain.generate({ minWords: 4, maxWords: 20 });
+    if (!sentence) return `⚠️ Couldn't generate from ${target}'s messages.`;
+    return `🗣️ ${target} probably said: ${sentence}`;
+  }
+
+  if (cmd === "story") {
+    if (markov.size < state.minCorpus) return `📚 Corpus too small for a story yet.`;
+    const sentences = [];
+    for (let i = 0; i < 3; i++) {
+      const s = markov.generate({ minWords: 6, maxWords: 18 });
+      if (s) sentences.push(s);
+    }
+    if (sentences.length === 0) return `⚠️ Couldn't generate a story right now.`;
+    return `📖 ${sentences.join(" ")}`;
   }
 
   if (cmd === "channels") {
@@ -309,9 +362,10 @@ function handle(channel, tags, message, ctx) {
   if (cmd === "help") {
     return (
       `Commands (${PREFIX}): ` +
-      `start | stop | status | say | interval <s> | cooldown <n> | minlines <n> | ` +
+      `start | stop | status | say | interval <s> | cooldown <n> | minlines <n> | greeter | ` +
       `join <ch> | leave <ch> | manual <ch> | unmanual <ch> | addlearn <ch> | removelearn <ch> | ` +
-      `channels | lines | adduser <u> | removeuser <u> | users`
+      `channels | lines | adduser <u> | removeuser <u> | users | ` +
+      `[all] 8ball <q> | mock <u> | markov <u> | story`
     );
   }
 
@@ -454,6 +508,14 @@ function handle(channel, tags, message, ctx) {
     state.allowedUsers.splice(idx, 1);
     saveState();
     return `🚫 Removed ${user}'s access.`;
+  }
+
+  if (cmd === "greeter") {
+    state.greeterEnabled = !state.greeterEnabled;
+    saveState();
+    return state.greeterEnabled
+      ? `👋 First-message greeter enabled — new chatters will get a Markov welcome.`
+      : `🔕 First-message greeter disabled.`;
   }
 
   return null;
