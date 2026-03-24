@@ -6,6 +6,7 @@ const path         = require("path");
 const MarkovChain  = require("./markov");
 const stateManager = require("./state");
 const commands     = require("./commands");
+const filter       = require("./filter");
 
 // ── Required env vars ─────────────────────────────────────────────────────────
 
@@ -55,6 +56,11 @@ function getChannelCooldown(ch) {
 function setChannelSetting(ch, key, value) {
   if (!state.channelSettings[ch]) state.channelSettings[ch] = {};
   state.channelSettings[ch][key] = value;
+}
+
+/** True when the broadcaster has paused posting in their own channel. */
+function isChannelPaused(ch) {
+  return !!(state.channelSettings[ch] && state.channelSettings[ch].paused);
 }
 
 // ── Markov chain ──────────────────────────────────────────────────────────────
@@ -124,6 +130,29 @@ async function updateLiveChannels() {
   }
 }
 
+// ── Generic Helix API helper ──────────────────────────────────────────────────
+
+async function helixGet(path) {
+  if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) {
+    throw new Error("TWITCH_CLIENT_ID / TWITCH_CLIENT_SECRET not configured");
+  }
+  if (!appAccessToken) appAccessToken = await fetchAppToken();
+  if (!appAccessToken) throw new Error("Could not obtain Twitch app token");
+
+  const url = `https://api.twitch.tv/helix/${path}`;
+  let res = await fetch(url, {
+    headers: { "Client-ID": TWITCH_CLIENT_ID, "Authorization": `Bearer ${appAccessToken}` },
+  });
+  if (res.status === 401) {
+    appAccessToken = await fetchAppToken();
+    if (!appAccessToken) throw new Error("Token refresh failed");
+    res = await fetch(url, {
+      headers: { "Client-ID": TWITCH_CLIENT_ID, "Authorization": `Bearer ${appAccessToken}` },
+    });
+  }
+  return res.json();
+}
+
 function isChannelLive(ch) {
   if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) return true;
   return liveChannels.has(ch.toLowerCase());
@@ -185,6 +214,10 @@ function restartTimer(ch) {
     // Restart a single channel's timer
     stopTimer(ch);
     if (!state.active || !state.postChannels.includes(ch)) return;
+    if (isChannelPaused(ch)) {
+      console.log(`⏸️   [#${ch}] Skipping timer restart — paused by broadcaster.`);
+      return;
+    }
     const ms = getChannelInterval(ch);
     postTimers[ch] = setInterval(() => postNow(ch), ms);
     console.log(`⏱️   [#${ch}] Timer set to ${ms / 1000}s.`);
@@ -193,6 +226,10 @@ function restartTimer(ch) {
     stopTimer();
     if (!state.active) return;
     for (const c of state.postChannels) {
+      if (isChannelPaused(c)) {
+        console.log(`⏸️   [#${c}] Skipping timer restart — paused by broadcaster.`);
+        continue;
+      }
       const ms = getChannelInterval(c);
       postTimers[c] = setInterval(() => postNow(c), ms);
       console.log(`⏱️   [#${c}] Timer set to ${ms / 1000}s.`);
@@ -211,8 +248,19 @@ function postNow(channel) {
     console.log(`⏳  [${ts()}] #${ch}: cooldown — ${remaining} more message(s) needed.`);
     return null;
   }
-  const msg = markov.generate({ minWords: 6, maxWords: 28 });
-  if (!msg) return null;
+  // Try up to 5 times to get a message that passes the TOS filter.
+  let msg = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = markov.generate({ minWords: 6, maxWords: 28 });
+    if (!candidate) break;
+    const result = filter.check(candidate);
+    if (result.ok) { msg = candidate; break; }
+    console.warn(`🚫  [${ts()}] #${ch}: filtered (${result.reason}) — "${candidate}"`);
+  }
+  if (!msg) {
+    console.warn(`⚠️  [${ts()}] #${ch}: all candidates blocked by TOS filter, skipping.`);
+    return null;
+  }
   const target = channel.startsWith("#") ? channel : `#${channel}`;
   client.say(target, msg).catch(err =>
     console.warn(`⚠️  [${ts()}] say() failed on ${target}:`, err.message)
@@ -260,11 +308,13 @@ setInterval(() => {
 const ctx = {
   state, saveState,
   markov,
+  client,
   restartTimer, stopTimer,
   postNow,
   joinChannel, leaveChannel,
   resetCooldownCounters,
   getChannelInterval, getChannelCooldown, setChannelSetting,
+  helixGet,
   addLearnChannel: (ch) => {
     if (!state.learnChannels.includes(ch)) state.learnChannels.push(ch);
   },
