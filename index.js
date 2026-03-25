@@ -451,7 +451,7 @@ client.on("message", (channel, tags, message, self) => {
   if (
     state.greeterEnabled &&
     state.postChannels.includes(ch) &&
-    tags["first-msg"] === "1" &&
+    tags["first-msg"] &&
     !IGNORE_BOTS.includes(username)
   ) {
     if (markov.size >= state.minCorpus) {
