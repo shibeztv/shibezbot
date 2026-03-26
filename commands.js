@@ -61,8 +61,6 @@ function handle(channel, tags, message, ctx) {
   if (!parsed) return null;
 
   const { state } = ctx;
-  if (!hasAnyAccess(tags, state)) return null;
-
   const { cmd, args } = parsed;
   const {
     saveState, markov,
@@ -76,15 +74,54 @@ function handle(channel, tags, message, ctx) {
   // ch = the channel the command was typed in (no # prefix)
   const ch = channel.replace(/^#/, "");
 
-  // ── Commands available to ALL tiers ──────────────────────────────────────
+  // ── Open to ALL viewers (no access check) ───────────────────────────────
+
+  if (cmd === "help") {
+    return `Commands (${PREFIX}): say | markov <seed> | remind <user> <msg> | 8ball | mock | story | notify join/leave`;
+  }
 
   if (cmd === "say") {
+    const SAY_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+    const user = (tags.username || "").toLowerCase();
+    if (!isOwner(tags)) {
+      const last = ctx.sayCooldowns[user] || 0;
+      const remaining = SAY_COOLDOWN_MS - (Date.now() - last);
+      if (remaining > 0) {
+        const secs = Math.ceil(remaining / 1000);
+        const mins = Math.floor(secs / 60);
+        const s    = secs % 60;
+        return `@${user} ⏳ You can use ?say again in ${mins}m ${s}s.`;
+      }
+    }
     const result = postNow(channel);
     if (!result) return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`;
+    if (!isOwner(tags)) ctx.sayCooldowns[user] = Date.now();
     return null;
   }
 
-  // ── Public commands (any viewer) ─────────────────────────────────────────
+  if (cmd === "markov") {
+    const seed = args.join(" ").trim();
+    if (!seed) return `⚠️ Usage: ${PREFIX}markov <seed text>`;
+    if (markov.size < state.minCorpus) return `📚 Corpus too small (${markov.size}/${state.minCorpus}).`;
+    const sentence = markov.generateSeeded(seed, { minWords: 6, maxWords: 28 });
+    if (!sentence) return `⚠️ Couldn't generate a sentence from that seed.`;
+    return sentence;
+  }
+
+  if (cmd === "remind") {
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    const text   = args.slice(1).join(" ").trim();
+    if (!target || !text) return `⚠️ Usage: ${PREFIX}remind <user> <message>`;
+    const from = (tags.username || "").toLowerCase();
+    if (!ctx.reminders[target]) ctx.reminders[target] = [];
+    ctx.reminders[target].push({ from, text, when: Date.now(), channel });
+    return `✅ @${from} I'll remind ${target} when they next chat!`;
+  }
+
+  // ── Everything below requires elevated access ─────────────────────────────
+  if (!hasAnyAccess(tags, state)) return null;
+
+  // ── Public commands (mods / VIPs / allowed users and above) ──────────────
 
   if (cmd === "8ball") {
     const RESPONSES = [
@@ -111,29 +148,6 @@ function handle(channel, tags, message, ctx) {
       i % 2 === 0 ? c.toLowerCase() : c.toUpperCase()
     ).join("");
     return `@${target} ${mocked}`;
-  }
-
-  if (cmd === "markov") {
-    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
-    if (!target) return `⚠️ Usage: ${PREFIX}markov <username>`;
-    const msgs = ctx.userMessages[target];
-    if (!msgs || msgs.length < 5) return `📚 Not enough messages from ${target} yet (need at least 5).`;
-    const MarkovChain = require("./markov");
-    const userChain = new MarkovChain(2);
-    userChain.trainBulk(msgs);
-    const sentence = userChain.generate({ minWords: 4, maxWords: 20 });
-    if (!sentence) return `⚠️ Couldn't generate from ${target}'s messages.`;
-    return `🗣️ ${target} probably said: ${sentence}`;
-  }
-
-  if (cmd === "remind") {
-    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
-    const text   = args.slice(1).join(" ").trim();
-    if (!target || !text) return `⚠️ Usage: ${PREFIX}remind <user> <message>`;
-    const from = (tags.username || "").toLowerCase();
-    if (!ctx.reminders[target]) ctx.reminders[target] = [];
-    ctx.reminders[target].push({ from, text, when: Date.now(), channel });
-    return `✅ @${from} I'll remind ${target} when they next chat!`;
   }
 
   if (cmd === "story") {
@@ -419,12 +433,6 @@ function handle(channel, tags, message, ctx) {
   if (!isOwner(tags)) return null;
 
   // ── Owner-only commands ───────────────────────────────────────────────────
-
-  if (cmd === "help") {
-    return (
-      `Commands (${PREFIX}): say | join | manual | interval | greeter | channels | adduser | 8ball | mock | markov | notify join/leave/list | notify live/offline/category on/off`
-    );
-  }
 
   if (cmd === "start") {
     if (state.active) return "✅ Auto-post is already running.";

@@ -372,6 +372,7 @@ const newLines = [];
 const userLastMessage = {};        // { username: "last message text" }
 const userMessages    = {};        // { username: ["msg1", "msg2", ...] } (capped at 150)
 const reminders       = {};        // { username: [{ from, text, when, channel }] }
+const sayCooldowns    = {};        // { username: timestamp } — last time user triggered ?say
 const USER_MSG_CAP = 150;
 
 function learnMessage(username, message) {
@@ -412,6 +413,7 @@ const ctx = {
   userLastMessage,
   userMessages,
   reminders,
+  sayCooldowns,
   addLearnChannel: (ch) => {
     if (!state.learnChannels.includes(ch)) state.learnChannels.push(ch);
   },
@@ -474,7 +476,18 @@ client.on("message", (channel, tags, message, self) => {
     }
   }
 
-  if (!state.postChannels.includes(ch) && !manualChannels.includes(ch)) return;
+  // ── Owner ?say works from ANY channel the bot is in ─────────────────────
+  if (commands.isOwner(tags) && message.trim().toLowerCase() === "?say") {
+    const result = postNow(channel);
+    if (!result) {
+      client.say(channel,
+        `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`
+      ).catch(() => {});
+    }
+    return;
+  }
+
+  if (!state.postChannels.includes(ch) && !manualChannels.includes(ch) && !state.learnChannels.includes(ch)) return;
 
   const reply = commands.handle(channel, tags, message, ctx);
   if (reply) {
