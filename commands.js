@@ -114,16 +114,26 @@ function handle(channel, tags, message, ctx) {
   }
 
   if (cmd === "markov") {
-    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
-    if (!target) return `⚠️ Usage: ${PREFIX}markov <username>`;
+    if (!args.length) return `⚠️ Usage: ${PREFIX}markov <username or word/phrase>`;
+    const input  = args.join(" ").replace(/^@/, "").trim();
+    const target = input.toLowerCase();
+
+    // If we have enough messages from this exact username, do user-specific markov
     const msgs = ctx.userMessages[target];
-    if (!msgs || msgs.length < 5) return `📚 Not enough messages from ${target} yet (need at least 5).`;
-    const MarkovChain = require("./markov");
-    const userChain = new MarkovChain(2);
-    userChain.trainBulk(msgs);
-    const sentence = userChain.generate({ minWords: 4, maxWords: 20 });
-    if (!sentence) return `⚠️ Couldn't generate from ${target}'s messages.`;
-    return `🗣️ ${target} probably said: ${sentence}`;
+    if (msgs && msgs.length >= 5) {
+      const MarkovChain = require("./markov");
+      const userChain = new MarkovChain(2);
+      userChain.trainBulk(msgs);
+      const sentence = userChain.generate({ minWords: 4, maxWords: 20 });
+      if (!sentence) return `⚠️ Couldn't generate from ${target}'s messages.`;
+      return `🗣️ ${target} probably said: ${sentence}`;
+    }
+
+    // Otherwise treat as a seed word/phrase and generate from it
+    if (markov.size < state.minCorpus) return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}).`;
+    const sentence = markov.generateSeeded(input, { minWords: 6, maxWords: 24 });
+    if (!sentence) return `⚠️ Couldn't generate a sentence around "${input}".`;
+    return sentence;
   }
 
   if (cmd === "story") {

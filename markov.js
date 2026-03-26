@@ -61,6 +61,63 @@ class MarkovChain {
     return sentence;
   }
 
+
+  // Generate a sentence that contains or starts from a seed word/phrase.
+  // Looks for chain keys containing the seed; falls back to normal generate.
+  generateSeeded(seed, opts = {}) {
+    const { minWords = 8, maxWords = 30, maxAttempts = 20 } = opts;
+    if (!seed || this.starts.length === 0) return this.generate(opts);
+
+    const seedLower = seed.toLowerCase().trim();
+
+    // 1. Find start keys that contain the seed
+    const seededStarts = this.starts.filter(s => s.toLowerCase().includes(seedLower));
+
+    // 2. If no start keys match, find any chain key containing the seed
+    //    and use it as a mid-sentence starting point
+    let midKeys = [];
+    if (seededStarts.length === 0) {
+      for (const key of this.chain.keys()) {
+        if (key.toLowerCase().includes(seedLower)) midKeys.push(key);
+      }
+    }
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      let words;
+      if (seededStarts.length > 0) {
+        // Start from a key that already contains the seed
+        const startKey = seededStarts[Math.floor(Math.random() * seededStarts.length)];
+        words = startKey.split(" ");
+      } else if (midKeys.length > 0) {
+        // Start mid-chain from a key containing the seed
+        const midKey = midKeys[Math.floor(Math.random() * midKeys.length)];
+        words = midKey.split(" ");
+      } else {
+        // Seed not in corpus at all — insert it at the front and walk from nearest key
+        words = seedLower.split(" ");
+      }
+
+      // Walk the chain forward
+      for (let i = 0; i < maxWords - words.length; i++) {
+        const key   = words.slice(-this.order).join(" ");
+        const nexts = this.chain.get(key);
+        if (!nexts || nexts.length === 0) break;
+        const next = nexts[Math.floor(Math.random() * nexts.length)];
+        words.push(next);
+        if (words.length >= minWords && /[.!?]$/.test(next)) break;
+      }
+
+      if (words.length < minWords) continue;
+      let sentence = words.join(" ");
+      sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+      if (!/[.!?,]$/.test(sentence)) sentence += ".";
+      return sentence;
+    }
+
+    // Nothing worked — fall back to normal generation
+    return this.generate(opts);
+  }
+
   get size() { return this.corpusSize; }
 }
 
