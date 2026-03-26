@@ -114,43 +114,26 @@ function handle(channel, tags, message, ctx) {
   }
 
   if (cmd === "markov") {
-    if (markov.size < state.minCorpus) return `📚 Corpus too small (${markov.size}/${state.minCorpus}).`;
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}markov <username>`;
+    const msgs = ctx.userMessages[target];
+    if (!msgs || msgs.length < 5) return `📚 Not enough messages from ${target} yet (need at least 5).`;
+    const MarkovChain = require("./markov");
+    const userChain = new MarkovChain(2);
+    userChain.trainBulk(msgs);
+    const sentence = userChain.generate({ minWords: 4, maxWords: 20 });
+    if (!sentence) return `⚠️ Couldn't generate from ${target}'s messages.`;
+    return `🗣️ ${target} probably said: ${sentence}`;
+  }
 
-    // Join all args into a seed phrase
-    const seed = args.map(a => a.replace(/^@/, "")).join(" ").toLowerCase().trim();
-    let sentence = null;
-
-    if (seed) {
-      // Find chain keys that contain the full seed phrase, then fall back to any single word from it
-      const seedWords = seed.split(/\s+/);
-      const allKeys = [...markov.chain.keys()];
-
-      // Priority 1: key contains the full phrase
-      let matchingKeys = allKeys.filter(k => k.toLowerCase().includes(seed));
-
-      // Priority 2: key contains any of the seed words (longest match wins ordering)
-      if (matchingKeys.length === 0) {
-        matchingKeys = allKeys.filter(k =>
-          seedWords.some(w => k.toLowerCase().includes(w))
-        );
-      }
-
-      if (matchingKeys.length > 0) {
-        for (let i = 0; i < 15; i++) {
-          const pick = matchingKeys[Math.floor(Math.random() * matchingKeys.length)];
-          const origStarts = markov.starts;
-          markov.starts = [pick];
-          const attempt = markov.generate({ minWords: 4, maxWords: 20 });
-          markov.starts = origStarts;
-          if (attempt) { sentence = attempt; break; }
-        }
-      }
-    }
-
-    // Fallback: generate freely
-    if (!sentence) sentence = markov.generate({ minWords: 4, maxWords: 20 });
-    if (!sentence) return `⚠️ Couldn't generate a message right now.`;
-    return `🗣️ ${sentence}`;
+  if (cmd === "remind") {
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    const text   = args.slice(1).join(" ").trim();
+    if (!target || !text) return `⚠️ Usage: ${PREFIX}remind <user> <message>`;
+    const from = (tags.username || "").toLowerCase();
+    if (!ctx.reminders[target]) ctx.reminders[target] = [];
+    ctx.reminders[target].push({ from, text, when: Date.now(), channel });
+    return `✅ @${from} I'll remind ${target} when they next chat!`;
   }
 
   if (cmd === "story") {

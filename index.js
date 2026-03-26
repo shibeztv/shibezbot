@@ -371,6 +371,7 @@ const newLines = [];
 
 const userLastMessage = {};        // { username: "last message text" }
 const userMessages    = {};        // { username: ["msg1", "msg2", ...] } (capped at 150)
+const reminders       = {};        // { username: [{ from, text, when, channel }] }
 const USER_MSG_CAP = 150;
 
 function learnMessage(username, message) {
@@ -410,6 +411,7 @@ const ctx = {
   helixGet,
   userLastMessage,
   userMessages,
+  reminders,
   addLearnChannel: (ch) => {
     if (!state.learnChannels.includes(ch)) state.learnChannels.push(ch);
   },
@@ -457,8 +459,18 @@ client.on("message", (channel, tags, message, self) => {
     if (markov.size >= state.minCorpus) {
       const greeting = markov.generate({ minWords: 5, maxWords: 18 });
       if (greeting) {
-        client.say(channel, `${tags["display-name"] || username} ${greeting}`).catch(() => {});
+        client.say(channel, `@${username} ${greeting}`).catch(() => {});
       }
+    }
+  }
+
+  // ── Reminders ────────────────────────────────────────────────────────────
+  if (reminders[username] && reminders[username].length > 0) {
+    const pending = reminders[username].splice(0);
+    for (const r of pending) {
+      const ago  = formatAgo(Date.now() - r.when);
+      const msg  = `@${username} 🔔 Reminder from @${r.from} (${ago} ago): ${r.text}`;
+      client.say(channel, msg).catch(() => {});
     }
   }
 
@@ -503,4 +515,14 @@ process.on("SIGINT", () => {
 
 function ts() {
   return new Date().toLocaleTimeString();
+}
+
+function formatAgo(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 60)   return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60)   return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24)   return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
 }
