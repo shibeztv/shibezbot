@@ -323,6 +323,12 @@ function restartTimer(ch) {
 function postNow(channel) {
   const ch = channel.replace(/^#/, "");
   if (markov.size < state.minCorpus) return null;
+  // If online-only mode is enabled for this channel, skip posting when offline
+  const onlineOnly = state.channelSettings[ch] && state.channelSettings[ch].onlineOnly;
+  if (onlineOnly && !isChannelLive(ch)) {
+    console.log(`📴  [${ts()}] #${ch}: online-only mode — channel is offline, skipping.`);
+    return null;
+  }
   if (!cooldownReady(ch)) {
     const needed    = getChannelCooldown(ch);
     const remaining = needed - (msgCounters[ch] || 0);
@@ -462,7 +468,7 @@ client.on("message", (channel, tags, message, self) => {
     if (markov.size >= state.minCorpus) {
       const greeting = markov.generate({ minWords: 5, maxWords: 18 });
       if (greeting) {
-        client.say(channel, `${username} ${greeting}`).catch(() => {});
+        client.say(channel, `@${username} ${greeting}`).catch(() => {});
       }
     }
   }

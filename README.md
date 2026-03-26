@@ -7,7 +7,7 @@ with a full live command system so you can control everything from Twitch chat.
 
 ## Commands
 
-All commands use the `?` prefix. Commands are split by who can use them.
+All commands use the `?` prefix.
 
 ---
 
@@ -19,6 +19,9 @@ All commands use the `?` prefix. Commands are split by who can use them.
 | `?say` | Force the bot to post a Markov message (5 min cooldown per user) |
 | `?markov <word>` | Generate a Markov sentence seeded from a word or phrase |
 | `?dadjoke` | Fetch and post a random dad joke |
+| `?8ball <question>` | Ask the magic 8-ball (sometimes answers with Markov) |
+| `?mock <user>` | Repeat a user's last message in SpOnGeBoB case |
+| `?story` | Generate a 3-sentence Markov story |
 | `?notify live on/off` | Subscribe/unsubscribe to go-live pings for this channel |
 | `?notify offline on/off` | Subscribe/unsubscribe to offline pings |
 | `?notify category on/off` | Subscribe/unsubscribe to game/category change pings |
@@ -33,31 +36,35 @@ Everything above, plus:
 
 | Command | What it does |
 |---|---|
-| `?8ball <question>` | Ask the magic 8-ball (sometimes answers with Markov) |
-| `?mock <user>` | Repeat a user's last message in SpOnGeBoB case |
-| `?story` | Generate a 3-sentence Markov story |
-| `?compliment <user>` | Send a Markov-generated compliment at someone |
-| `?followage <user>` | Show how long a user has been following this channel |
-| `?top` | Show the top 8 most common words in the corpus |
-| `?channels` | List all post, manual, and learn channels |
-| `?lines` | Show current corpus line count |
-| `?users` | List the owner, allowed users, and access tiers |
-| `?adduser <user>` | Grant a user elevated bot access |
-
----
-
-### 📺 Broadcaster (in their own channel only)
-
-Everything above, plus:
-
-| Command | What it does |
-|---|---|
 | `?start` | Resume auto-posting in this channel |
 | `?stop` | Pause auto-posting in this channel |
 | `?status` | Show interval, cooldown, line count for this channel |
 | `?interval <seconds>` | Change how often the bot posts (min 30s) |
 | `?cooldown <n>` | Require N other messages between bot posts (0 = off) |
 | `?minlines <n>` | Set minimum corpus size before bot starts posting |
+| `?onlineonly` | Toggle online-only mode (only post while stream is live) |
+| `?greeter` | Toggle the first-message greeter on/off |
+| `?join` | Add this channel to auto-post list (own channel only) |
+| `?leave` | Remove this channel from auto-post list (own channel only) |
+| `?manual` | Set this channel to manual mode — no auto-posts (own channel only) |
+| `?unmanual` | Remove this channel from manual mode (own channel only) |
+| `?adduser <user>` | Grant a user elevated bot access |
+| `?removeuser <user>` | Revoke a user's elevated access |
+| `?users` | List the owner, allowed users, and access tiers |
+| `?channels` | List all post, manual, and learn channels |
+| `?lines` | Show current corpus line count |
+| `?compliment <user>` | Send a Markov-generated compliment at someone |
+| `?followage <user>` | Show how long a user has been following this channel |
+| `?top` | Show the top 8 most common words in the corpus |
+
+---
+
+### 📺 Broadcaster
+
+Everything above, plus:
+
+| Command | What it does |
+|---|---|
 | `?removeme` | Remove the bot from this channel entirely |
 
 ---
@@ -68,14 +75,12 @@ Everything above, plus:
 
 | Command | What it does |
 |---|---|
-| `?join <channel>` | Join a channel and auto-post there |
-| `?leave <channel>` | Leave a post channel |
-| `?manual <channel>` | Join a channel in manual mode (no auto-posting) |
-| `?unmanual <channel>` | Leave a manual channel |
+| `?join <channel>` | Join any channel and auto-post there |
+| `?leave <channel>` | Leave any post channel |
+| `?manual <channel>` | Join any channel in manual mode (no auto-posting) |
+| `?unmanual <channel>` | Leave any manual channel |
 | `?addlearn <channel>` | Silently lurk and learn from a channel (no posting) |
 | `?removelearn <channel>` | Stop learning from a channel |
-| `?removeuser <user>` | Revoke a user's elevated access |
-| `?greeter` | Toggle the first-message greeter on/off |
 
 ---
 
@@ -87,15 +92,16 @@ Everything above, plus:
 ?cooldown 5          → wait for 5 other messages before posting again
 ?cooldown 0          → disable cooldown
 ?say                 → send one message immediately
-?join xqc            → also post in xQc's chat
-?leave xqc           → stop posting there
-?addlearn hasanabi   → learn from hasanabi's chat silently
+?join xqc            → also post in xQc's chat (owner only)
+?leave xqc           → stop posting there (owner only)
+?addlearn hasanabi   → learn from hasanabi's chat silently (owner only)
 ?stop                → pause auto-posts
 ?start               → resume
 ?minlines 200        → don't post until 200+ lines learned
 ?lines               → 📚 Lines: 842 trained (min to post: 50)
 ?status              → 📊 Status: ▶ running | Interval: 300s | Cooldown: 5 msgs | ...
 ?notify live on      → get pinged when this channel goes live
+?onlineonly          → toggle online-only posting mode
 ?dadjoke             → 🥁 Why don't scientists trust atoms? Because they make up everything.
 ```
 
@@ -110,6 +116,7 @@ Everything above, plus:
 5. **Persistent corpus** — learned lines are auto-saved to `learned_corpus.txt` every 60 seconds and reloaded on startup.
 6. **Live notifications** — the bot polls Twitch every 2 minutes and pings subscribed users when a channel goes live, offline, or changes category.
 7. **First-message greeter** — when enabled with `?greeter`, the bot welcomes first-time chatters with a Markov message (uses Twitch's native first-message tag).
+8. **Online-only mode** — when enabled with `?onlineonly`, the bot silently skips auto-posts while the stream is offline.
 
 ---
 
@@ -151,7 +158,7 @@ twitch-markov-bot/
 - `?addlearn` on a popular channel with similar chat culture is great for bulk-learning vocabulary fast.
 - Set `?minlines 200` for noticeably better sentence quality before it starts posting.
 - The bot ignores its own messages and common bot accounts automatically.
-- Live notifications require `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` to be set in `.env`.
+- Live notifications and `?onlineonly` require `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` to be set in `.env`.
 
 ---
 

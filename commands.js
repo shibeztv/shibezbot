@@ -82,9 +82,7 @@ function handle(channel, tags, message, ctx) {
       return (
         `Commands (${PREFIX}): ` +
         `say (force a bot message) | ` +
-        `markov <word> (generate from a seed word) | ` +
-        `remind <user> <message> (remind someone when they next chat) | ` +
-        `notify live/offline on/off (subscribe to stream notifications) | dadjoke`
+        `markov <word> | dadjoke | remind <user> <msg> | notify live/offline/category on/off | 8ball | mock <u> | story`
       );
     }
 
@@ -97,26 +95,27 @@ function handle(channel, tags, message, ctx) {
         `addlearn <ch> | removelearn <ch> | ` +
         `adduser <u> | removeuser <u> | users | channels | lines | ` +
         `markov <seed> | mock <u> | story | compliment <u> | 8ball | ` +
-        `followage <u> | top | greeter | notify | remind | dadjoke`
+        `followage <u> | top | greeter | notify | remind`
       );
     }
 
     if (isBroadcaster(tags)) {
       return (
-        `📺 Broadcaster commands (${PREFIX}): ` +
-        `start | stop | status | say | interval <s> | cooldown <n> | ` +
-        `adduser <u> | users | channels | lines | removeme | ` +
-        `markov <seed> | mock <u> | story | compliment <u> | 8ball | ` +
-        `followage <u> | top | notify | remind | dadjoke`
+        `📺 Broadcaster/Mod: start | stop | status | say | interval <s> | cooldown <n> | minlines <n> | ` +
+        `join | leave | manual | unmanual (own channel only) | ` +
+        `adduser <u> | removeuser <u> | users | channels | lines | removeme | ` +
+        `greeter | onlineonly | notify | remind | ` +
+        `markov <seed> | mock <u> | story | compliment <u> | 8ball | dadjoke | followage <u> | top`
       );
     }
 
     // Mods / VIPs / allowed users
     return (
-      `🔧 Mod commands (${PREFIX}): ` +
-      `say | channels | lines | users | adduser <u> | ` +
-      `markov <seed> | mock <u> | story | compliment <u> | 8ball | ` +
-      `followage <u> | top | notify | remind | dadjoke`
+      `🔧 Mod: start | stop | status | say | interval <s> | cooldown <n> | ` +
+      `join | leave | manual | unmanual (own channel only) | ` +
+      `adduser <u> | removeuser <u> | users | channels | lines | ` +
+      `greeter | onlineonly | notify | remind | ` +
+      `markov <seed> | mock <u> | story | compliment <u> | 8ball | dadjoke | followage <u> | top`
     );
   }
 
@@ -148,6 +147,16 @@ function handle(channel, tags, message, ctx) {
     return sentence;
   }
 
+  if (cmd === "remind") {
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    const text   = args.slice(1).join(" ").trim();
+    if (!target || !text) return `⚠️ Usage: ${PREFIX}remind <user> <message>`;
+    const from = (tags.username || "").toLowerCase();
+    if (!ctx.reminders[target]) ctx.reminders[target] = [];
+    ctx.reminders[target].push({ from, text, when: Date.now(), channel });
+    return `✅ @${from} I'll remind ${target} when they next chat!`;
+  }
+
   if (cmd === "dadjoke") {
     const { client } = ctx;
     const target = channel.startsWith("#") ? channel : `#${channel}`;
@@ -167,16 +176,6 @@ function handle(channel, tags, message, ctx) {
       }
     });
     return null;
-  }
-
-  if (cmd === "remind") {
-    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
-    const text   = args.slice(1).join(" ").trim();
-    if (!target || !text) return `⚠️ Usage: ${PREFIX}remind <user> <message>`;
-    const from = (tags.username || "").toLowerCase();
-    if (!ctx.reminders[target]) ctx.reminders[target] = [];
-    ctx.reminders[target].push({ from, text, when: Date.now(), channel });
-    return `✅ @${from} I'll remind ${target} when they next chat!`;
   }
 
   // ── Everything below requires elevated access ─────────────────────────────
@@ -394,11 +393,11 @@ function handle(channel, tags, message, ctx) {
     return `✅ ${user} can now use bot commands.`;
   }
 
-  // ── Broadcaster-scoped commands ───────────────────────────────────────────
-  // These run before the owner-only block so broadcasters can't fall through
-  // to owner commands.
+  // ── Broadcaster + Mod scoped commands ────────────────────────────────────
+  // Runs before the owner-only block. Broadcasters act on their own channel.
+  // Mods/VIPs can use these commands only within the channel they are modding.
 
-  if (isBroadcaster(tags) && !isOwner(tags)) {
+  if ((isBroadcaster(tags) || isModOrVip(tags) || isAllowedUser(tags, state)) && !isOwner(tags)) {
 
     if (cmd === "start") {
       setChannelSetting(ch, "paused", false);
@@ -456,6 +455,75 @@ function handle(channel, tags, message, ctx) {
       return `📚 Minimum lines set to ${n} (current: ${markov.size}).`;
     }
 
+    if (cmd === "onlineonly") {
+      const current = !!(state.channelSettings[ch] && state.channelSettings[ch].onlineOnly);
+      setChannelSetting(ch, "onlineOnly", !current);
+      saveState();
+      return !current
+        ? `📴 [#${ch}] Online-only mode ON — bot will only post when stream is live.`
+        : `📡 [#${ch}] Online-only mode OFF — bot will post regardless of stream status.`;
+    }
+
+    if (cmd === "greeter") {
+      state.greeterEnabled = !state.greeterEnabled;
+      saveState();
+      return state.greeterEnabled
+        ? `👋 First-message greeter enabled — new chatters will get a Markov welcome.`
+        : `🔕 First-message greeter disabled.`;
+    }
+
+    if (cmd === "removeuser") {
+      const user = (args[0] || "").toLowerCase().trim();
+      if (!user) return `⚠️ Usage: ${PREFIX}removeuser <username>`;
+      if (!state.allowedUsers) return `${user} doesn't have access.`;
+      const idx = state.allowedUsers.indexOf(user);
+      if (idx === -1) return `${user} doesn't have access.`;
+      state.allowedUsers.splice(idx, 1);
+      saveState();
+      return `🚫 Removed ${user}'s access.`;
+    }
+
+    // join / leave / manual / unmanual — scoped to own channel only
+    if (cmd === "join") {
+      if (state.postChannels.includes(ch)) return `Already posting in #${ch}.`;
+      joinChannel(ch);
+      state.postChannels.push(ch);
+      saveState();
+      if (state.active) restartTimer(ch);
+      return `✅ Joined #${ch} — will post there.`;
+    }
+
+    if (cmd === "leave") {
+      const idx = state.postChannels.indexOf(ch);
+      if (idx === -1) return `Not currently posting in #${ch}.`;
+      leaveChannel(ch);
+      state.postChannels.splice(idx, 1);
+      saveState();
+      return `👋 Left #${ch}.`;
+    }
+
+    if (cmd === "manual") {
+      if (state.postChannels.includes(ch)) return `#${ch} is already a full post channel. Use ${PREFIX}leave first.`;
+      if (state.manualChannels.includes(ch)) return `Already in manual mode for #${ch}.`;
+      if (state.learnChannels.includes(ch)) {
+        state.learnChannels.splice(state.learnChannels.indexOf(ch), 1);
+      } else {
+        joinChannel(ch);
+      }
+      state.manualChannels.push(ch);
+      saveState();
+      return `✅ #${ch} set to manual mode — won't auto-post. Use ${PREFIX}say to post.`;
+    }
+
+    if (cmd === "unmanual") {
+      const idx = state.manualChannels.indexOf(ch);
+      if (idx === -1) return `#${ch} is not in manual mode.`;
+      leaveChannel(ch);
+      state.manualChannels.splice(idx, 1);
+      saveState();
+      return `👋 Left manual channel #${ch}.`;
+    }
+
     if (cmd === "removeme") {
       const inPost   = state.postChannels.indexOf(ch);
       const inManual = (state.manualChannels || []).indexOf(ch);
@@ -470,18 +538,15 @@ function handle(channel, tags, message, ctx) {
       if (inLearn  !== -1) state.learnChannels.splice(inLearn, 1);
 
       saveState();
-      // Delay the part() slightly so the farewell reply can be delivered first.
       setTimeout(() => leaveChannel(ch), 800);
       return `👋 Bot is leaving #${ch}. The owner can re-add it with ${PREFIX}join.`;
     }
 
-    // No match for broadcaster — don't fall through to owner commands.
+    // No match for broadcaster/mod — don't fall through to owner commands.
     return null;
   }
 
-  // ── Non-owner limited access (mods / VIPs / allowedUsers) ────────────────
-  // $say / $channels / $lines / $users / $adduser are already handled above.
-  // Nothing else is allowed for this tier.
+  // ── Non-owner, non-mod access — nothing more allowed ─────────────────────
   if (!isOwner(tags)) return null;
 
   // ── Owner-only commands ───────────────────────────────────────────────────
@@ -623,14 +688,6 @@ function handle(channel, tags, message, ctx) {
     state.allowedUsers.splice(idx, 1);
     saveState();
     return `🚫 Removed ${user}'s access.`;
-  }
-
-  if (cmd === "greeter") {
-    state.greeterEnabled = !state.greeterEnabled;
-    saveState();
-    return state.greeterEnabled
-      ? `👋 First-message greeter enabled — new chatters will get a Markov welcome.`
-      : `🔕 First-message greeter disabled.`;
   }
 
   return null;
