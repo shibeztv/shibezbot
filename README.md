@@ -16,37 +16,37 @@ All commands use the `$` prefix by default (change with `CMD_PREFIX` in `.env`).
 
 | Command | What it does |
 |---|---|
-| `$help` | List all commands |
-| `$start` | Start auto-posting |
-| `$stop` | Pause auto-posting |
-| `$status` | Show interval, cooldown, line count, channels |
-| `$say` | Force one Markov message right now |
-| `$interval <seconds>` | Change how often the bot posts (min 30s) |
-| `$cooldown <n>` | Require N other-user messages between bot posts (0 = off) |
-| `$minlines <n>` | Set how many lines needed before posting |
-| `$join <channel>` | Join another channel and post there too |
-| `$leave <channel>` | Leave a post channel |
-| `$addlearn <channel>` | Join a channel to learn from (no posting) |
-| `$removelearn <channel>` | Stop learning from a channel |
-| `$channels` | List all post channels and learn channels |
-| `$lines` | Show current line count |
+| `?help` | List all commands |
+| `?start` | Start auto-posting |
+| `?stop` | Pause auto-posting |
+| `?status` | Show interval, cooldown, line count, channels |
+| `?say` | Force one Markov message right now |
+| `?interval <seconds>` | Change how often the bot posts (min 30s) |
+| `?cooldown <n>` | Require N other-user messages between bot posts (0 = off) |
+| `?minlines <n>` | Set how many lines needed before posting |
+| `?join <channel>` | Join another channel and post there too |
+| `?leave <channel>` | Leave a post channel |
+| `?addlearn <channel>` | Join a channel to learn from (no posting) |
+| `?removelearn <channel>` | Stop learning from a channel |
+| `?channels` | List all post channels and learn channels |
+| `?lines` | Show current line count |
 
 ### Examples
 
 ```
-$interval 120        → post every 2 minutes
-$cooldown 5          → wait for 5 other messages before posting again
-$cooldown 0          → disable cooldown
-$say                 → send one message immediately
-$join xqc            → also post in xQc's chat
-$leave xqc           → stop posting there
-$addlearn hasanabi   → learn from hasanabi's chat silently
-$removelearn hasanabi
-$stop                → pause all auto-posts
-$start               → resume
-$minlines 200        → don't post until 200+ lines learned
-$lines               → 📚 Lines: 842 trained (min to post: 50)
-$status              → 📊 Status: ▶ running | Interval: 300s | Cooldown: 5 msgs | ...
+?interval 120        → post every 2 minutes
+?cooldown 5          → wait for 5 other messages before posting again
+?cooldown 0          → disable cooldown
+?say                 → send one message immediately
+?join xqc            → also post in xQc's chat
+?leave xqc           → stop posting there
+?addlearn hasanabi   → learn from hasanabi's chat silently
+?removelearn hasanabi
+?stop                → pause all auto-posts
+?start               → resume
+?minlines 200        → don't post until 200+ lines learned
+?lines               → 📚 Lines: 842 trained (min to post: 50)
+?status              → 📊 Status: ▶ running | Interval: 300s | Cooldown: 5 msgs | ...
 ```
 
 ---
@@ -94,9 +94,9 @@ twitch-markov-bot/
 
 ## Tips
 
-- Run `$stop` during your stream if you want the bot quiet, then `$start` later.
-- `$addlearn` on a popular channel with similar chat culture is great for bulk-learning vocabulary fast.
-- Set `$mincorpus 200` for noticeably better sentence quality before it starts posting.
+- Run `?stop` during your stream if you want the bot quiet, then `?start` later.
+- `?addlearn` on a popular channel with similar chat culture is great for bulk-learning vocabulary fast.
+- Set `?mincorpus 200` for noticeably better sentence quality before it starts posting.
 - The bot ignores its own messages and common bot accounts automatically.
 
 ---
