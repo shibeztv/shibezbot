@@ -3,17 +3,6 @@
 A Twitch bot that blends in as a viewer by posting Markov-generated chat messages —
 with a full live command system so you can control everything from Twitch chat.
 
-
-Get your OAuth token at **https://twitchapps.com/tmi/**
-
----
-
-## Commands
-
-All commands use the `$` prefix by default (change with `CMD_PREFIX` in `.env`).
-
-**Who can use them:** only `shlbez` (hardcoded in `commands.js` — change `OWNER` there if needed).
-
 | Command | What it does |
 |---|---|
 | `?help` | List all commands |
@@ -30,6 +19,7 @@ All commands use the `$` prefix by default (change with `CMD_PREFIX` in `.env`).
 | `?removelearn <channel>` | Stop learning from a channel |
 | `?channels` | List all post channels and learn channels |
 | `?lines` | Show current line count |
+| `?markov` | Makes a sentence with input text. |
 
 ### Examples
 
@@ -51,15 +41,6 @@ All commands use the `$` prefix by default (change with `CMD_PREFIX` in `.env`).
 
 ---
 
-## How it works
-
-1. **Seed file** (`seed.txt`) — pre-loaded at startup so the bot can post right away.
-2. **Live learning** — reads every chat message from all joined channels and trains the Markov chain.
-3. **Learn-only channels** — use `$addlearn` to silently lurk in big channels and absorb vocabulary without posting there.
-4. **Persistent state** — all settings (interval, channels, active status) are saved to `bot_state.json` and restored on restart.
-5. **Persistent corpus** — learned lines are auto-saved to `learned_corpus.txt` every 60 seconds and reloaded on startup.
-
----
 
 ## Getting good seed data
 
