@@ -84,7 +84,7 @@ function handle(channel, tags, message, ctx) {
         `say (force a bot message) | ` +
         `markov <word> (generate from a seed word) | ` +
         `remind <user> <message> (remind someone when they next chat) | ` +
-        `notify live/offline on/off (subscribe to stream notifications)`
+        `notify live/offline on/off (subscribe to stream notifications) | dadjoke`
       );
     }
 
@@ -97,7 +97,7 @@ function handle(channel, tags, message, ctx) {
         `addlearn <ch> | removelearn <ch> | ` +
         `adduser <u> | removeuser <u> | users | channels | lines | ` +
         `markov <seed> | mock <u> | story | compliment <u> | 8ball | ` +
-        `followage <u> | top | greeter | notify | remind`
+        `followage <u> | top | greeter | notify | remind | dadjoke`
       );
     }
 
@@ -107,7 +107,7 @@ function handle(channel, tags, message, ctx) {
         `start | stop | status | say | interval <s> | cooldown <n> | ` +
         `adduser <u> | users | channels | lines | removeme | ` +
         `markov <seed> | mock <u> | story | compliment <u> | 8ball | ` +
-        `followage <u> | top | notify | remind`
+        `followage <u> | top | notify | remind | dadjoke`
       );
     }
 
@@ -116,7 +116,7 @@ function handle(channel, tags, message, ctx) {
       `🔧 Mod commands (${PREFIX}): ` +
       `say | channels | lines | users | adduser <u> | ` +
       `markov <seed> | mock <u> | story | compliment <u> | 8ball | ` +
-      `followage <u> | top | notify | remind`
+      `followage <u> | top | notify | remind | dadjoke`
     );
   }
 
@@ -146,6 +146,27 @@ function handle(channel, tags, message, ctx) {
     const sentence = markov.generateSeeded(seed, { minWords: 6, maxWords: 28 });
     if (!sentence) return `⚠️ Couldn't generate a sentence from that seed.`;
     return sentence;
+  }
+
+  if (cmd === "dadjoke") {
+    const { client } = ctx;
+    const target = channel.startsWith("#") ? channel : `#${channel}`;
+    Promise.resolve().then(async () => {
+      try {
+        const res = await fetch("https://icanhazdadjoke.com/", {
+          headers: { "Accept": "application/json", "User-Agent": "TwitchMarkovBot/2.0" }
+        });
+        const data = await res.json();
+        if (data && data.joke) {
+          client.say(target, `🥁 ${data.joke}`).catch(() => {});
+        } else {
+          client.say(target, "⚠️ Couldn't fetch a dad joke right now.").catch(() => {});
+        }
+      } catch (e) {
+        client.say(target, "⚠️ Couldn't reach the dad joke server.").catch(() => {});
+      }
+    });
+    return null;
   }
 
   if (cmd === "remind") {
