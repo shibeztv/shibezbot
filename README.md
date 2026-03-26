@@ -1,47 +1,80 @@
-# 🤖 Shibez's Twitch Markov Bot (Shibez_bot)
+# 🤖 Twitch Markov Bot v2
 
 A Twitch bot that blends in as a viewer by posting Markov-generated chat messages —
 with a full live command system so you can control everything from Twitch chat.
 
+---
+
+## Quick Start
+
+```bash
+# 1. Install
+npm install
+
+# 2. Configure
+cp .env.example .env
+# Edit .env — add your bot username, OAuth token, and channel
+
+# 3. Run
+npm start
+```
+
+Get your OAuth token at **https://twitchapps.com/tmi/** (log in as the bot account first).
+
+---
+
+## Commands
+
+All commands use the `$` prefix by default (change with `CMD_PREFIX` in `.env`).
+
+**Who can use them:** only `shlbez` (hardcoded in `commands.js` — change `OWNER` there if needed).
+
 | Command | What it does |
 |---|---|
-| `?help` | List all commands |
-| `?start` | Start auto-posting |
-| `?stop` | Pause auto-posting |
-| `?status` | Show interval, cooldown, line count, channels |
-| `?say` | Force one Markov message right now |
-| `?interval <seconds>` | Change how often the bot posts (min 30s) |
-| `?cooldown <n>` | Require N other-user messages between bot posts (0 = off) |
-| `?minlines <n>` | Set how many lines needed before posting |
-| `?join <channel>` | Join another channel and post there too |
-| `?leave <channel>` | Leave a post channel |
-| `?addlearn <channel>` | Join a channel to learn from (no posting) |
-| `?removelearn <channel>` | Stop learning from a channel |
-| `?channels` | List all post channels and learn channels |
-| `?lines` | Show current line count |
-| `?markov` | Makes a sentence with input text. |
-| `?remind <user> <message>` | Set a reminder for a user — the bot will tag them with your message the next time they type in chat |
+| `$help` | List all commands |
+| `$start` | Start auto-posting |
+| `$stop` | Pause auto-posting |
+| `$status` | Show interval, cooldown, line count, channels |
+| `$say` | Force one Markov message right now |
+| `$interval <seconds>` | Change how often the bot posts (min 30s) |
+| `$cooldown <n>` | Require N other-user messages between bot posts (0 = off) |
+| `$minlines <n>` | Set how many lines needed before posting |
+| `$join <channel>` | Join another channel and post there too |
+| `$leave <channel>` | Leave a post channel |
+| `$addlearn <channel>` | Join a channel to learn from (no posting) |
+| `$removelearn <channel>` | Stop learning from a channel |
+| `$channels` | List all post channels and learn channels |
+| `$lines` | Show current line count |
 
 ### Examples
 
 ```
-?interval 120        → post every 2 minutes
-?cooldown 5          → wait for 5 other messages before posting again
-?cooldown 0          → disable cooldown
-?say                 → send one message immediately
-?join xqc            → also post in xQc's chat
-?leave xqc           → stop posting there
-?addlearn hasanabi   → learn from hasanabi's chat silently
-?removelearn hasanabi
-?stop                → pause all auto-posts
-?start               → resume
-?minlines 200        → don't post until 200+ lines learned
-?lines               → 📚 Lines: 842 trained (min to post: 50)
-?status              → 📊 Status: ▶ running | Interval: 300s | Cooldown: 5 msgs | ...
+$interval 120        → post every 2 minutes
+$cooldown 5          → wait for 5 other messages before posting again
+$cooldown 0          → disable cooldown
+$say                 → send one message immediately
+$join xqc            → also post in xQc's chat
+$leave xqc           → stop posting there
+$addlearn hasanabi   → learn from hasanabi's chat silently
+$removelearn hasanabi
+$stop                → pause all auto-posts
+$start               → resume
+$minlines 200        → don't post until 200+ lines learned
+$lines               → 📚 Lines: 842 trained (min to post: 50)
+$status              → 📊 Status: ▶ running | Interval: 300s | Cooldown: 5 msgs | ...
 ```
 
 ---
 
+## How it works
+
+1. **Seed file** (`seed.txt`) — pre-loaded at startup so the bot can post right away.
+2. **Live learning** — reads every chat message from all joined channels and trains the Markov chain.
+3. **Learn-only channels** — use `$addlearn` to silently lurk in big channels and absorb vocabulary without posting there.
+4. **Persistent state** — all settings (interval, channels, active status) are saved to `bot_state.json` and restored on restart.
+5. **Persistent corpus** — learned lines are auto-saved to `learned_corpus.txt` every 60 seconds and reloaded on startup.
+
+---
 
 ## Getting good seed data
 
@@ -76,9 +109,9 @@ twitch-markov-bot/
 
 ## Tips
 
-- Run `?stop` during your stream if you want the bot quiet, then `?start` later.
-- `?addlearn` on a popular channel with similar chat culture is great for bulk-learning vocabulary fast.
-- Set `?mincorpus 200` for noticeably better sentence quality before it starts posting.
+- Run `$stop` during your stream if you want the bot quiet, then `$start` later.
+- `$addlearn` on a popular channel with similar chat culture is great for bulk-learning vocabulary fast.
+- Set `$mincorpus 200` for noticeably better sentence quality before it starts posting.
 - The bot ignores its own messages and common bot accounts automatically.
 
 ---

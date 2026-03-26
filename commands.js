@@ -77,7 +77,47 @@ function handle(channel, tags, message, ctx) {
   // ── Open to ALL viewers (no access check) ───────────────────────────────
 
   if (cmd === "help") {
-    return `Commands (${PREFIX}): say | markov <seed> | remind <user> <msg> | 8ball | mock | story | notify join/leave`;
+    // Regular viewers only see the public-facing commands
+    if (!hasAnyAccess(tags, state)) {
+      return (
+        `Commands (${PREFIX}): ` +
+        `say (force a bot message) | ` +
+        `markov <word> (generate from a seed word) | ` +
+        `remind <user> <message> (remind someone when they next chat) | ` +
+        `notify join/leave (get pinged when channel goes live)`
+      );
+    }
+
+    // Broadcaster / mod / shlbez see the full list split by tier
+    if (isOwner(tags)) {
+      return (
+        `👑 Owner commands (${PREFIX}): ` +
+        `start | stop | status | say | interval <s> | cooldown <n> | minlines <n> | ` +
+        `join <ch> | leave <ch> | manual <ch> | unmanual <ch> | ` +
+        `addlearn <ch> | removelearn <ch> | ` +
+        `adduser <u> | removeuser <u> | users | channels | lines | ` +
+        `markov <seed> | mock <u> | story | compliment <u> | 8ball | ` +
+        `followage <u> | top | greeter | notify | remind`
+      );
+    }
+
+    if (isBroadcaster(tags)) {
+      return (
+        `📺 Broadcaster commands (${PREFIX}): ` +
+        `start | stop | status | say | interval <s> | cooldown <n> | ` +
+        `adduser <u> | users | channels | lines | removeme | ` +
+        `markov <seed> | mock <u> | story | compliment <u> | 8ball | ` +
+        `followage <u> | top | notify | remind`
+      );
+    }
+
+    // Mods / VIPs / allowed users
+    return (
+      `🔧 Mod commands (${PREFIX}): ` +
+      `say | channels | lines | users | adduser <u> | ` +
+      `markov <seed> | mock <u> | story | compliment <u> | 8ball | ` +
+      `followage <u> | top | notify | remind`
+    );
   }
 
   if (cmd === "say") {
