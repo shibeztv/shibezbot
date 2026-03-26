@@ -18,9 +18,7 @@ const DEFAULTS = {
   minCorpus:        50,
   active:           true,
   greeterEnabled:   false,
-  notifyEnabled:    {},   // { channelName: true/false } (legacy, kept for compat)
-  notifyEvents:     {},   // { channelName: { live: bool, offline: bool, category: bool } }
-  notifyUsers:      {},   // { channelName: ["user1", "user2", ...] }
+  notifyUsers:      {},   // { channelName: { live: [], offline: [], category: [] } }
 };
 
 function load() {

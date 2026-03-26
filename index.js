@@ -141,9 +141,10 @@ async function updateLiveChannels() {
       streamInfo[stream.user_login.toLowerCase()] = stream.game_name || "";
     }
 
-    // Helper: batch-ping subscribers
-    function fireNotification(ch, message) {
-      const users = (state.notifyUsers && state.notifyUsers[ch]) || [];
+    // Helper: batch-ping subscribers for a specific event
+    function fireNotification(ch, event, message) {
+      const chUsers = (state.notifyUsers && state.notifyUsers[ch]) || {};
+      const users = chUsers[event] || [];
       if (users.length === 0) return;
       const prefix = `${message} `;
       const chunks = [];
@@ -169,8 +170,8 @@ async function updateLiveChannels() {
     }
 
     function notifyEvent(ch, event) {
-      if (!state.notifyEvents || !state.notifyEvents[ch]) return false;
-      return !!state.notifyEvents[ch][event];
+      const chUsers = (state.notifyUsers && state.notifyUsers[ch]) || {};
+      return (chUsers[event] || []).length > 0;
     }
 
     const allTracked = new Set([...snapshot, ...liveChannels]);
@@ -181,13 +182,13 @@ async function updateLiveChannels() {
       // 🔴 Went live
       if (!wasLive && isLive && notifyEvent(ch, "live")) {
         const cat = streamInfo[ch] ? ` — playing ${streamInfo[ch]}` : "";
-        fireNotification(ch, `🔴 ${ch} is now live${cat}!`);
+        fireNotification(ch, "live", `🔴 ${ch} is now live${cat}!`);
         console.log(`🔴  [${ts()}] Fired live notification in #${ch}.`);
       }
 
       // ⚫ Went offline
       if (wasLive && !isLive && notifyEvent(ch, "offline")) {
-        fireNotification(ch, `⚫ ${ch} has gone offline.`);
+        fireNotification(ch, "offline", `⚫ ${ch} has gone offline.`);
         console.log(`⚫  [${ts()}] Fired offline notification in #${ch}.`);
       }
 
@@ -196,7 +197,7 @@ async function updateLiveChannels() {
         const newCat  = streamInfo[ch] || "";
         const prevCat = prevCategories[ch];
         if (prevCat !== undefined && prevCat !== newCat && newCat) {
-          fireNotification(ch, `🎮 ${ch} switched to ${newCat}!`);
+          fireNotification(ch, "category", `🎮 ${ch} switched to ${newCat}!`);
           console.log(`🎮  [${ts()}] Fired category change notification in #${ch}: ${prevCat} → ${newCat}.`);
         }
       }
@@ -293,7 +294,7 @@ function restartTimer(ch) {
   if (ch) {
     // Restart a single channel's timer
     stopTimer(ch);
-    if (!state.active || !state.postChannels.includes(ch)) return;
+    if (!state.postChannels.includes(ch)) return;
     if (isChannelPaused(ch)) {
       console.log(`⏸️   [#${ch}] Skipping timer restart — paused by broadcaster.`);
       return;
@@ -304,7 +305,7 @@ function restartTimer(ch) {
   } else {
     // Restart all channels
     stopTimer();
-    if (!state.active) return;
+    // (no global active flag — each channel is controlled via paused setting)
     for (const c of state.postChannels) {
       if (isChannelPaused(c)) {
         console.log(`⏸️   [#${c}] Skipping timer restart — paused by broadcaster.`);
@@ -435,7 +436,7 @@ client.on("connected", (addr, port) => {
   } else {
     console.log(`⚠️  Live channel tracking: disabled (TWITCH_CLIENT_ID/SECRET not set)`);
   }
-  if (state.active) restartTimer();
+  restartTimer(); // starts all non-paused channels
 });
 
 client.on("message", (channel, tags, message, self) => {

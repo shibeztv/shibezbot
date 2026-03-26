@@ -84,7 +84,7 @@ function handle(channel, tags, message, ctx) {
         `say (force a bot message) | ` +
         `markov <word> (generate from a seed word) | ` +
         `remind <user> <message> (remind someone when they next chat) | ` +
-        `notify join/leave (get pinged when channel goes live)`
+        `notify live/offline on/off (subscribe to stream notifications)`
       );
     }
 
@@ -202,53 +202,44 @@ function handle(channel, tags, message, ctx) {
   }
 
   if (cmd === "notify") {
+    // ?notify <event> on/off — any viewer subscribes/unsubscribes themselves
+    // Events: live, offline, category
+    const VALID_EVENTS = ["live", "offline", "category"];
     const sub  = (args[0] || "").toLowerCase();
+    const onOff = (args[1] || "").toLowerCase();
     const user = (tags.username || "").toLowerCase();
 
-    // ?notify join — any user adds themselves
-    if (sub === "join") {
+    if (VALID_EVENTS.includes(sub) && (onOff === "on" || onOff === "off")) {
       if (!state.notifyUsers) state.notifyUsers = {};
-      if (!state.notifyUsers[ch]) state.notifyUsers[ch] = [];
-      if (state.notifyUsers[ch].includes(user)) return `@${user} You are already on the notification list for #${ch}.`;
-      state.notifyUsers[ch].push(user);
-      saveState();
-      return `@${user} ✅ You will be pinged when #${ch} goes live!`;
+      if (!state.notifyUsers[ch]) state.notifyUsers[ch] = {};
+      if (!state.notifyUsers[ch][sub]) state.notifyUsers[ch][sub] = [];
+
+      if (onOff === "on") {
+        if (state.notifyUsers[ch][sub].includes(user))
+          return `@${user} You are already subscribed to ${sub} notifications for #${ch}.`;
+        state.notifyUsers[ch][sub].push(user);
+        saveState();
+        const label = sub === "live" ? "goes live" : sub === "offline" ? "goes offline" : "changes category";
+        return `@${user} ✅ You'll be pinged when #${ch} ${label}!`;
+      } else {
+        const idx = state.notifyUsers[ch][sub].indexOf(user);
+        if (idx === -1) return `@${user} You are not subscribed to ${sub} notifications for #${ch}.`;
+        state.notifyUsers[ch][sub].splice(idx, 1);
+        saveState();
+        return `@${user} 🔕 Unsubscribed from ${sub} notifications for #${ch}.`;
+      }
     }
 
-    // ?notify leave — any user removes themselves
-    if (sub === "leave") {
-      if (!state.notifyUsers || !state.notifyUsers[ch]) return `@${user} You are not on the notification list.`;
-      const idx = state.notifyUsers[ch].indexOf(user);
-      if (idx === -1) return `@${user} You are not on the notification list.`;
-      state.notifyUsers[ch].splice(idx, 1);
-      saveState();
-      return `@${user} 🔕 Removed from notifications for #${ch}.`;
-    }
-
-    // ?notify live|offline|category on|off — broadcaster or mod only
-    if ((sub === "live" || sub === "offline" || sub === "category") && (args[1] === "on" || args[1] === "off")) {
-      if (!isOwner(tags) && !isBroadcaster(tags) && !isModOrVip(tags)) return null;
-      if (!state.notifyEvents) state.notifyEvents = {};
-      if (!state.notifyEvents[ch]) state.notifyEvents[ch] = { live: false, offline: false, category: false };
-      state.notifyEvents[ch][sub] = (args[1] === "on");
-      saveState();
-      return args[1] === "on"
-        ? `✅ ${sub} notifications enabled for #${ch}.`
-        : `🔕 ${sub} notifications disabled for #${ch}.`;
-    }
-
-    // ?notify list — show count and event states
+    // ?notify list — show subscriber counts per event
     if (sub === "list") {
-      const users  = (state.notifyUsers && state.notifyUsers[ch]) || [];
-      const events = (state.notifyEvents && state.notifyEvents[ch]) || {};
-      const live     = events.live     ? "🔴 live" : "";
-      const offline  = events.offline  ? "⚫ offline" : "";
-      const category = events.category ? "🎮 category" : "";
-      const active   = [live, offline, category].filter(Boolean).join(" | ") || "none enabled";
-      return `🔔 #${ch}: ${users.length} subscriber(s) | active: ${active}`;
+      const chUsers = (state.notifyUsers && state.notifyUsers[ch]) || {};
+      const liveCount     = (chUsers.live     || []).length;
+      const offlineCount  = (chUsers.offline  || []).length;
+      const categoryCount = (chUsers.category || []).length;
+      return `🔔 #${ch} subscribers — 🔴 live: ${liveCount} | ⚫ offline: ${offlineCount} | 🎮 category: ${categoryCount}`;
     }
 
-    return `Usage: ?notify join/leave/list | ?notify live/offline/category on/off (mod/broadcaster)`;
+    return `Usage: ${PREFIX}notify live/offline/category on/off | ${PREFIX}notify list`;
   }
 
   if (cmd === "channels") {
@@ -475,19 +466,17 @@ function handle(channel, tags, message, ctx) {
   // ── Owner-only commands ───────────────────────────────────────────────────
 
   if (cmd === "start") {
-    if (state.active) return "✅ Auto-post is already running.";
-    state.active = true;
+    setChannelSetting(ch, "paused", false);
     saveState();
-    restartTimer(); // restarts all channels (skips individually paused ones)
-    return `✅ Auto-post started.`;
+    restartTimer(ch);
+    return `✅ [#${ch}] Auto-posting started.`;
   }
 
   if (cmd === "stop") {
-    if (!state.active) return "⏸️ Auto-post is already stopped.";
-    state.active = false;
+    setChannelSetting(ch, "paused", true);
     saveState();
-    stopTimer(); // stops all channels
-    return "⏸️ Auto-post stopped.";
+    stopTimer(ch);
+    return `⏸️ [#${ch}] Auto-posting stopped.`;
   }
 
   if (cmd === "status") {
