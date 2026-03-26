@@ -462,7 +462,7 @@ client.on("message", (channel, tags, message, self) => {
     if (markov.size >= state.minCorpus) {
       const greeting = markov.generate({ minWords: 5, maxWords: 18 });
       if (greeting) {
-        client.say(channel, `@${username} ${greeting}`).catch(() => {});
+        client.say(channel, `${username} ${greeting}`).catch(() => {});
       }
     }
   }
