@@ -20,6 +20,7 @@ with a full live command system so you can control everything from Twitch chat.
 | `?channels` | List all post channels and learn channels |
 | `?lines` | Show current line count |
 | `?markov` | Makes a sentence with input text. |
+| `?remind <user> <message>` | Set a reminder for a user — the bot will tag them with your message the next time they type in chat |
 
 ### Examples
 
