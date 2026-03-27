@@ -540,38 +540,32 @@ function handle(channel, tags, message, ctx) {
   if (cmd === 'gpt') {
     const question = args.join(' ').trim();
     if (!question) return `⚠️ Usage: ${PREFIX}gpt <question>`;
-    const GROK_API_KEY = process.env.GROK_API_KEY;
-    if (!GROK_API_KEY) return `⚠️ GROK_API_KEY not set in .env`;
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    if (!GEMINI_API_KEY) return `⚠️ GEMINI_API_KEY not set in .env`;
     const { client } = ctx;
     const replyTo = channel.startsWith('#') ? channel : `#${channel}`;
     const user = (tags.username || '').toLowerCase();
     Promise.resolve().then(async () => {
       try {
-        const res = await fetch('https://api.x.ai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${GROK_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: 'grok-3-mini',
-            max_tokens: 120,
-            messages: [
-              {
-                role: 'system',
-                content: 'You are a helpful Twitch chat assistant. Answer in 2-3 short sentences max. Be concise and casual. No markdown.',
-              },
-              { role: 'user', content: question },
-            ],
-          }),
-        });
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: 'You are a helpful Twitch chat assistant. Answer in 2-3 short sentences max. Be concise and casual. No markdown, no bullet points.' }] },
+              contents: [{ parts: [{ text: question }] }],
+              generationConfig: { maxOutputTokens: 120 },
+            }),
+          }
+        );
         const data = await res.json();
-        const answer = data?.choices?.[0]?.message?.content?.trim();
-        if (!answer) return client.say(replyTo, '⚠️ Grok did not respond.').catch(() => {});
+        const answer = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (!answer) return client.say(replyTo, '⚠️ Gemini did not respond.').catch(() => {});
         const reply = `@${user} ${answer}`.slice(0, 490);
         client.say(replyTo, reply).catch(() => {});
       } catch (e) {
-        client.say(replyTo, `⚠️ Grok request failed: ${e.message}`).catch(() => {});
+        client.say(replyTo, `⚠️ Gemini request failed: ${e.message}`).catch(() => {});
       }
     });
     return null;
