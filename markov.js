@@ -56,7 +56,6 @@ class MarkovChain {
     }
     if (words.length < minWords) return null;
     let sentence = words.join(" ");
-    sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
     return sentence;
   }
 
@@ -108,7 +107,6 @@ class MarkovChain {
 
       if (words.length < minWords) continue;
       let sentence = words.join(" ");
-      sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
       return sentence;
     }
 
