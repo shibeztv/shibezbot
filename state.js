@@ -13,7 +13,7 @@ const DEFAULTS = {
   manualChannels:   [],
   allowedUsers:     [],
   channelSettings:  {},  // per-channel overrides: { channelName: { intervalMs, cooldownMessages } }
-  intervalMs:       300_000,  // global default interval
+  intervalMs:       3_600_000,  // global default interval (1 hour)
   cooldownMessages: 0,        // global default cooldown
   minCorpus:        50,
   active:           true,

@@ -486,11 +486,15 @@ function handle(channel, tags, message, ctx) {
     // join / leave / manual / unmanual — scoped to own channel only
     if (cmd === "join") {
       if (state.postChannels.includes(ch)) return `Already posting in #${ch}.`;
-      joinChannel(ch);
-      state.postChannels.push(ch);
+      const newCh = ch;
+      if (!state.channelSettings[newCh]) state.channelSettings[newCh] = {};
+      state.channelSettings[newCh].paused    = true;
+      state.channelSettings[newCh].onlineOnly = true;
+      state.channelSettings[newCh].intervalMs = 3_600_000;
+      joinChannel(newCh);
+      state.postChannels.push(newCh);
       saveState();
-      if (state.active) restartTimer(ch);
-      return `✅ Joined #${ch} — will post there.`;
+      return `✅ Joined #${newCh} — paused by default. Type ?start to begin posting.`;
     }
 
     if (cmd === "leave") {
@@ -614,11 +618,14 @@ function handle(channel, tags, message, ctx) {
     const target = normalise(args[0]);
     if (!target) return `⚠️ Usage: ${PREFIX}join <channel>`;
     if (state.postChannels.includes(target)) return `Already posting in #${target}.`;
+    if (!state.channelSettings[target]) state.channelSettings[target] = {};
+    state.channelSettings[target].paused    = true;
+    state.channelSettings[target].onlineOnly = true;
+    state.channelSettings[target].intervalMs = 3_600_000;
     joinChannel(target);
     state.postChannels.push(target);
     saveState();
-    if (state.active) restartTimer(target);
-    return `✅ Joined #${target} — will post there.`;
+    return `✅ Joined #${target} — paused by default. Type ?start to begin posting.`;
   }
 
   if (cmd === "leave") {
