@@ -533,11 +533,7 @@ function handle(channel, tags, message, ctx) {
     return null;
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  if (!hasAnyAccess(tags, state)) return null;
+  // ── Public commands (any viewer) ─────────────────────────────────────────
 
   if (cmd === "8ball") {
     const RESPONSES = [
@@ -576,15 +572,6 @@ function handle(channel, tags, message, ctx) {
     return `📖 ${sentences.join(" ")}`;
   }
 
-  if (cmd === "compliment") {
-    const target = (args[0] || "").toLowerCase().trim();
-    if (!target) return `⚠️ Usage: ${PREFIX}compliment <username>`;
-    if (markov.size < state.minCorpus) return `⚠️ Corpus too small to generate a compliment yet.`;
-    const sentence = markov.generate({ minWords: 5, maxWords: 20 });
-    if (!sentence) return `⚠️ Couldn't generate a compliment right now.`;
-    return `@${target} ${sentence}`;
-  }
-
   if (cmd === "notify") {
     const VALID_EVENTS = ["live", "offline", "category"];
     const sub   = (args[0] || "").toLowerCase();
@@ -608,11 +595,28 @@ function handle(channel, tags, message, ctx) {
         return `@${user} 🔕 Unsubscribed from ${sub} notifications for #${ch}.`;
       }
     }
-    if (sub === "list") {
-      const chUsers = (state.notifyUsers && state.notifyUsers[ch]) || {};
-      return `🔔 #${ch} — 🔴 live: ${(chUsers.live||[]).length} | ⚫ offline: ${(chUsers.offline||[]).length} | 🎮 category: ${(chUsers.category||[]).length}`;
-    }
-    return `Usage: ${PREFIX}notify live/offline/category on/off | ${PREFIX}notify list`;
+    // ?notify list — elevated only (falls through to gated section)
+    if (sub !== "list") return `Usage: ${PREFIX}notify live/offline/category on/off`;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (!hasAnyAccess(tags, state)) return null;
+
+  if (cmd === "notify") {
+    const chUsers = (state.notifyUsers && state.notifyUsers[ch]) || {};
+    return `🔔 #${ch} — 🔴 live: ${(chUsers.live||[]).length} | ⚫ offline: ${(chUsers.offline||[]).length} | 🎮 category: ${(chUsers.category||[]).length}`;
+  }
+
+  if (cmd === "compliment") {
+    const target = (args[0] || "").toLowerCase().trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}compliment <username>`;
+    if (markov.size < state.minCorpus) return `⚠️ Corpus too small to generate a compliment yet.`;
+    const sentence = markov.generate({ minWords: 5, maxWords: 20 });
+    if (!sentence) return `⚠️ Couldn't generate a compliment right now.`;
+    return `@${target} ${sentence}`;
   }
 
   if (cmd === "channels") {
