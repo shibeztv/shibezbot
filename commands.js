@@ -533,7 +533,55 @@ function handle(channel, tags, message, ctx) {
     return null;
   }
 
-  // ── Public commands (any viewer) ─────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (cmd === 'gpt') {
+    const question = args.join(' ').trim();
+    if (!question) return `⚠️ Usage: ${PREFIX}gpt <question>`;
+    const GROK_API_KEY = process.env.GROK_API_KEY;
+    if (!GROK_API_KEY) return `⚠️ GROK_API_KEY not set in .env`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith('#') ? channel : `#${channel}`;
+    const user = (tags.username || '').toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        const res = await fetch('https://api.x.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${GROK_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: 'grok-3-mini',
+            max_tokens: 120,
+            messages: [
+              {
+                role: 'system',
+                content: 'You are a helpful Twitch chat assistant. Answer in 2-3 short sentences max. Be concise and casual. No markdown.',
+              },
+              { role: 'user', content: question },
+            ],
+          }),
+        });
+        const data = await res.json();
+        const answer = data?.choices?.[0]?.message?.content?.trim();
+        if (!answer) return client.say(replyTo, '⚠️ Grok did not respond.').catch(() => {});
+        const reply = `@${user} ${answer}`.slice(0, 490);
+        client.say(replyTo, reply).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `⚠️ Grok request failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (!hasAnyAccess(tags, state)) return null;
 
   if (cmd === "8ball") {
     const RESPONSES = [
@@ -572,6 +620,15 @@ function handle(channel, tags, message, ctx) {
     return `📖 ${sentences.join(" ")}`;
   }
 
+  if (cmd === "compliment") {
+    const target = (args[0] || "").toLowerCase().trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}compliment <username>`;
+    if (markov.size < state.minCorpus) return `⚠️ Corpus too small to generate a compliment yet.`;
+    const sentence = markov.generate({ minWords: 5, maxWords: 20 });
+    if (!sentence) return `⚠️ Couldn't generate a compliment right now.`;
+    return `@${target} ${sentence}`;
+  }
+
   if (cmd === "notify") {
     const VALID_EVENTS = ["live", "offline", "category"];
     const sub   = (args[0] || "").toLowerCase();
@@ -595,28 +652,11 @@ function handle(channel, tags, message, ctx) {
         return `@${user} 🔕 Unsubscribed from ${sub} notifications for #${ch}.`;
       }
     }
-    // ?notify list — elevated only (falls through to gated section)
-    if (sub !== "list") return `Usage: ${PREFIX}notify live/offline/category on/off`;
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  if (!hasAnyAccess(tags, state)) return null;
-
-  if (cmd === "notify") {
-    const chUsers = (state.notifyUsers && state.notifyUsers[ch]) || {};
-    return `🔔 #${ch} — 🔴 live: ${(chUsers.live||[]).length} | ⚫ offline: ${(chUsers.offline||[]).length} | 🎮 category: ${(chUsers.category||[]).length}`;
-  }
-
-  if (cmd === "compliment") {
-    const target = (args[0] || "").toLowerCase().trim();
-    if (!target) return `⚠️ Usage: ${PREFIX}compliment <username>`;
-    if (markov.size < state.minCorpus) return `⚠️ Corpus too small to generate a compliment yet.`;
-    const sentence = markov.generate({ minWords: 5, maxWords: 20 });
-    if (!sentence) return `⚠️ Couldn't generate a compliment right now.`;
-    return `@${target} ${sentence}`;
+    if (sub === "list") {
+      const chUsers = (state.notifyUsers && state.notifyUsers[ch]) || {};
+      return `🔔 #${ch} — 🔴 live: ${(chUsers.live||[]).length} | ⚫ offline: ${(chUsers.offline||[]).length} | 🎮 category: ${(chUsers.category||[]).length}`;
+    }
+    return `Usage: ${PREFIX}notify live/offline/category on/off | ${PREFIX}notify list`;
   }
 
   if (cmd === "channels") {
