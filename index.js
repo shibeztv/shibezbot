@@ -500,7 +500,9 @@ client.on("message", (channel, tags, message, self) => {
     return;
   }
 
-  if (!state.postChannels.includes(ch) && !manualChannels.includes(ch) && !state.learnChannels.includes(ch)) return;
+  // Owner can run commands from any channel the bot is in, even learn-only ones
+  const isOwnerMsg = commands.isOwner(tags);
+  if (!isOwnerMsg && !state.postChannels.includes(ch) && !manualChannels.includes(ch) && !state.learnChannels.includes(ch)) return;
 
   const reply = commands.handle(channel, tags, message, ctx);
   if (reply) {

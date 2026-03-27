@@ -98,12 +98,6 @@ function check(message) {
     return { ok: false, reason: "empty message" };
   }
 
-  // Never post anything that starts with a bot command prefix
-  const trimmed = message.trimStart();
-  if (trimmed.startsWith("!") || trimmed.startsWith("/") || trimmed.startsWith(".")) {
-    return { ok: false, reason: "command prefix (!, /, .)" };
-  }
-
   const norm = normalise(message);
 
   if (hasWord(norm, SLURS))     return { ok: false, reason: "hate speech / slur" };

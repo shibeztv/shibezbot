@@ -418,11 +418,11 @@ function handle(channel, tags, message, ctx) {
       const channelActive = state.active && !paused;
       const intervalSecs  = getChannelInterval(ch) / 1000;
       const cooldown      = getChannelCooldown(ch);
-      const cdInfo        = cooldown > 0 ? `${cooldown} msgs` : "off";
+      const cdInfo        = cooldown > 0 ? `${cooldown} msgs` : "none";
       return (
-        `📊 [#${ch}] ${channelActive ? "▶ running" : "⏸ paused"} | ` +
-        `Interval: ${intervalSecs}s | Cooldown: ${cdInfo} | ` +
-        `Lines: ${markov.size} (min: ${state.minCorpus})`
+        `📊 #${ch}: ${channelActive ? "▶ posting" : "⏸ paused"} | ` +
+        `Every: ${intervalSecs}s | Min messages: ${cdInfo} | ` +
+        `Corpus: ${markov.size.toLocaleString()} lines`
       );
     }
 
@@ -571,18 +571,16 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "status") {
     const paused        = !!(state.channelSettings[ch] && state.channelSettings[ch].paused);
+    const onlineOnly    = !!(state.channelSettings[ch] && state.channelSettings[ch].onlineOnly);
     const channelActive = state.active && !paused;
     const intervalSecs  = getChannelInterval(ch) / 1000;
     const cooldown      = getChannelCooldown(ch);
-    const cdInfo        = cooldown > 0 ? `${cooldown} msgs` : "off";
-    const postList      = state.postChannels.join(", ")         || "(none)";
-    const manualList    = (state.manualChannels||[]).join(", ") || "(none)";
-    const learnList     = state.learnChannels.join(", ")        || "(none)";
+    const cdInfo        = cooldown > 0 ? `${cooldown} msgs` : "none";
     return (
-      `📊 [#${ch}] ${channelActive ? "▶ running" : "⏸ stopped"} | ` +
-      `Interval: ${intervalSecs}s | Cooldown: ${cdInfo} | ` +
-      `Lines: ${markov.size} (min: ${state.minCorpus}) | ` +
-      `Auto: ${postList} | Manual: ${manualList} | Learn: ${learnList}`
+      `📊 #${ch}: ${channelActive ? "▶ posting" : "⏸ paused"} | ` +
+      `Every: ${intervalSecs}s | Min messages: ${cdInfo} | ` +
+      `Corpus: ${markov.size.toLocaleString()} lines | ` +
+      `Online-only: ${onlineOnly ? "on" : "off"}`
     );
   }
 

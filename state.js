@@ -13,12 +13,14 @@ const DEFAULTS = {
   manualChannels:   [],
   allowedUsers:     [],
   channelSettings:  {},  // per-channel overrides: { channelName: { intervalMs, cooldownMessages } }
-  intervalMs:       3_600_000,  // global default interval (1 hour)
+  intervalMs:       300_000,  // global default interval
   cooldownMessages: 0,        // global default cooldown
   minCorpus:        50,
   active:           true,
   greeterEnabled:   false,
-  notifyUsers:      {},   // { channelName: { live: [], offline: [], category: [] } }
+  notifyEnabled:    {},   // { channelName: true/false } (legacy, kept for compat)
+  notifyEvents:     {},   // { channelName: { live: bool, offline: bool, category: bool } }
+  notifyUsers:      {},   // { channelName: ["user1", "user2", ...] }
 };
 
 function load() {
