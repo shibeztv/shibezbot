@@ -695,8 +695,39 @@ function handle(channel, tags, message, ctx) {
     return `🚫 Removed ${user}'s access.`;
   }
 
+  if (cmd === "onlineonly") {
+    const current = !!(state.channelSettings[ch] && state.channelSettings[ch].onlineOnly);
+    setChannelSetting(ch, "onlineOnly", !current);
+    saveState();
+    return !current
+      ? `📴 [#${ch}] Online-only mode ON — bot will only post when stream is live.`
+      : `📡 [#${ch}] Online-only mode OFF — bot will post regardless of stream status.`;
+  }
+
+  if (cmd === "greeter") {
+    state.greeterEnabled = !state.greeterEnabled;
+    saveState();
+    return state.greeterEnabled
+      ? `👋 First-message greeter enabled — new chatters will get a Markov welcome.`
+      : `🔕 First-message greeter disabled.`;
+  }
+
+  if (cmd === "removeme") {
+    const inPost   = state.postChannels.indexOf(ch);
+    const inManual = (state.manualChannels || []).indexOf(ch);
+    const inLearn  = state.learnChannels.indexOf(ch);
+    if (inPost === -1 && inManual === -1 && inLearn === -1) return `Bot is not active in #${ch}.`;
+    if (inPost   !== -1) state.postChannels.splice(inPost, 1);
+    if (inManual !== -1) state.manualChannels.splice(inManual, 1);
+    if (inLearn  !== -1) state.learnChannels.splice(inLearn, 1);
+    saveState();
+    setTimeout(() => leaveChannel(ch), 800);
+    return `👋 Bot is leaving #${ch}.`;
+  }
+
   return null;
 }
+
 
 function normalise(ch) {
   if (!ch) return null;
