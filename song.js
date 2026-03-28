@@ -2,12 +2,12 @@
  * song.js — Live stream song recognition via Shazam (RapidAPI)
  *
  * Flow:
- *   1. streamlink grabs the live Twitch stream (best quality, piped)
- *   2. ffmpeg extracts ~5 seconds of audio and converts to raw PCM (s16le, 16kHz, mono)
- *   3. PCM is base64-encoded and sent to Shazam's detect endpoint via RapidAPI
+ *   1. yt-dlp grabs the live Twitch stream audio pipe
+ *   2. ffmpeg extracts ~5 seconds, converts to raw PCM (s16le, 16kHz, mono)
+ *   3. PCM is base64-encoded and sent to Shazam via RapidAPI
  *   4. Returns { title, artist } or null if no match
  *
- * Requires on the system: ffmpeg, streamlink (installed via Dockerfile)
+ * Requires on the system: ffmpeg, yt-dlp (installed via Dockerfile)
  * Requires env: RAPIDAPI_KEY
  */
 
@@ -17,7 +17,7 @@ const https     = require("https");
 const RAPIDAPI_KEY  = process.env.RAPIDAPI_KEY || "";
 const RAPIDAPI_HOST = "shazam.p.rapidapi.com";
 const CAPTURE_SECS  = 5;
-const TIMEOUT_MS    = 25_000;
+const TIMEOUT_MS    = 30_000;
 
 /**
  * Capture audio from a live Twitch stream and identify the song.
@@ -35,7 +35,7 @@ async function identify(channel) {
   return await queryShazam(audioBuffer);
 }
 
-// ── Step 1: capture audio ─────────────────────────────────────────────────────
+// ── Step 1: capture audio via yt-dlp ─────────────────────────────────────────
 
 function captureStreamAudio(channel) {
   return new Promise((resolve, reject) => {
@@ -47,17 +47,24 @@ function captureStreamAudio(channel) {
       fn(val);
     }
 
-    const streamUrl  = `https://www.twitch.tv/${channel}`;
-    const rawToken   = (process.env.OAUTH_TOKEN || "").replace(/^oauth:/i, "");
+    const streamUrl = `https://www.twitch.tv/${channel}`;
+    const rawToken  = (process.env.OAUTH_TOKEN || "").replace(/^oauth:/i, "");
 
-    const streamlinkArgs = ["--stdout", "--quiet", streamUrl, "best"];
+    // yt-dlp: pipe best audio to stdout
+    const ytdlpArgs = [
+      "--quiet",
+      "--no-warnings",
+      "--format", "best",
+      "-o", "-",           // output to stdout
+    ];
     if (rawToken) {
-      streamlinkArgs.splice(2, 0, "--twitch-api-header", `Authorization=OAuth ${rawToken}`);
+      ytdlpArgs.push("--add-header", `Authorization:OAuth ${rawToken}`);
     }
+    ytdlpArgs.push(streamUrl);
 
-    const streamlink = spawn("streamlink", streamlinkArgs);
+    const ytdlp = spawn("yt-dlp", ytdlpArgs);
 
-    // Shazam expects raw PCM: signed 16-bit little-endian, 16kHz, mono
+    // ffmpeg reads from stdin, extracts CAPTURE_SECS of mono 16kHz PCM
     const ffmpeg = spawn("ffmpeg", [
       "-i", "pipe:0",
       "-t", String(CAPTURE_SECS),
@@ -68,32 +75,38 @@ function captureStreamAudio(channel) {
       "pipe:1",
     ], { stdio: ["pipe", "pipe", "ignore"] });
 
-    streamlink.stdout.pipe(ffmpeg.stdin);
+    ytdlp.stdout.pipe(ffmpeg.stdin);
+
+    // If yt-dlp errors, log it but don't crash — ffmpeg will just get no data
+    ytdlp.stderr.on("data", data => {
+      const msg = data.toString().trim();
+      if (msg) console.warn(`[yt-dlp] ${msg}`);
+    });
 
     const chunks = [];
     ffmpeg.stdout.on("data", chunk => chunks.push(chunk));
 
     ffmpeg.on("close", () => {
-      streamlink.kill("SIGKILL");
+      ytdlp.kill("SIGKILL");
       if (chunks.length === 0) {
-        settle(reject, new Error("No audio data from stream — is the channel live?"));
+        settle(reject, new Error("No audio captured — is the channel live and is yt-dlp working?"));
       } else {
         settle(resolve, Buffer.concat(chunks));
       }
     });
 
     ffmpeg.on("error", err => {
-      streamlink.kill("SIGKILL");
+      ytdlp.kill("SIGKILL");
       settle(reject, new Error(`ffmpeg error: ${err.message}`));
     });
 
-    streamlink.on("error", err => {
+    ytdlp.on("error", err => {
       ffmpeg.kill("SIGKILL");
-      settle(reject, new Error(`streamlink error: ${err.message}`));
+      settle(reject, new Error(`yt-dlp error: ${err.message} — is yt-dlp installed?`));
     });
 
     const timer = setTimeout(() => {
-      streamlink.kill("SIGKILL");
+      ytdlp.kill("SIGKILL");
       ffmpeg.kill("SIGKILL");
       settle(reject, new Error("Stream capture timed out — channel may be offline"));
     }, TIMEOUT_MS);
@@ -123,7 +136,6 @@ function queryShazam(audioBuffer) {
       res.on("end", () => {
         try {
           const json = JSON.parse(data);
-          // Shazam returns { track: { title, subtitle, ... } }
           const track = json?.track;
           if (track && track.title) {
             resolve({
