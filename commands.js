@@ -721,40 +721,42 @@ function handle(channel, tags, message, ctx) {
   // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
   // ═══════════════════════════════════════════════════════════════════════════
 
-  if (cmd === 'gpt') {
-    const question = args.join(' ').trim();
+  if (cmd === "gpt") {
+    const question = args.join(" ").trim();
     if (!question) return `⚠️ Usage: ${PREFIX}gpt <question>`;
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) return `⚠️ GEMINI_API_KEY not set in .env`;
+    const GROQ_API_KEY = process.env.GROQ_API_KEY;
+    if (!GROQ_API_KEY) return `⚠️ GROQ_API_KEY not set in .env`;
     const { client } = ctx;
-    const replyTo = channel.startsWith('#') ? channel : `#${channel}`;
-    const user = (tags.username || '').toLowerCase();
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
     Promise.resolve().then(async () => {
       try {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: `You are a helpful Twitch chat assistant. Answer in 2-3 short sentences max, be concise and casual, no markdown or bullet points.\n\n${question}` }] }],
-              generationConfig: { maxOutputTokens: 150 },
-            }),
-          }
-        );
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type":  "application/json",
+            "Authorization": `Bearer ${GROQ_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: "llama-3.1-8b-instant",
+            messages: [
+              { role: "system", content: "You are a helpful Twitch chat assistant. Answer in 2-3 short sentences max. Be concise and casual. No markdown, no bullet points." },
+              { role: "user",   content: question },
+            ],
+            max_tokens: 120,
+          }),
+        });
         const data = await res.json();
         if (data.error) {
-          console.warn(`⚠️  [?gpt] API error: ${JSON.stringify(data.error)}`);
-          return client.say(replyTo, `⚠️ Gemini error: ${data.error.message}`).catch(() => {});
+          return client.say(replyTo, `⚠️ Groq error: ${data.error.message}`).catch(() => {});
         }
-        const answer = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        const answer = data?.choices?.[0]?.message?.content?.trim();
         if (!answer) {
-          console.warn(`⚠️  [?gpt] Empty response: ${JSON.stringify(data)}`);
-          return client.say(replyTo, '⚠️ Gemini returned an empty response.').catch(() => {});
+          return client.say(replyTo, "⚠️ Groq returned no answer.").catch(() => {});
         }
         client.say(replyTo, `@${user} ${answer}`.slice(0, 490)).catch(() => {});
       } catch (e) {
-        client.say(replyTo, `⚠️ Gemini request failed: ${e.message}`).catch(() => {});
+        client.say(replyTo, `⚠️ Groq request failed: ${e.message}`).catch(() => {});
       }
     });
     return null;
@@ -915,8 +917,8 @@ function handleSongCommand(channel, ch, ctx) {
   const target = channel.startsWith("#") ? channel : `#${channel}`;
 
   // Check if AUDD_API_KEY is configured
-  if (!process.env.RAPIDAPI_KEY) {
-    client.say(target, "⚠️ ?song is not configured — RAPIDAPI_KEY is missing.").catch(() => {});
+  if (!process.env.AUDD_API_KEY) {
+    client.say(target, "⚠️ ?song is not configured — AUDD_API_KEY is missing.").catch(() => {});
     return;
   }
 
