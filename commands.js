@@ -70,10 +70,11 @@ function handle(channel, tags, message, ctx) {
     if (cmd === "help") {
       return (
         `👑 Owner (${PREFIX}): ` +
-        `say | markov <seed> | remind <user> <msg> | dadjoke | 8ball | mock <u> | story | compliment <u> | ` +
-        `start | stop | status | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
-        `join <ch> | leave <ch> | manual <ch> | unmanual <ch> | addlearn <ch> | removelearn <ch> | ` +
-        `adduser <u> | removeuser <u> | users | channels | lines | followage <u> | top | notify | remind | removeme`
+        `say | markov <seed> | dadjoke | gpt <q> | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
+        `lines | followage <u> | top | status | join | leave | manual | removeme | notify | ` +
+        `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | unmanual | ` +
+        `channels | users | adduser <u> | removeuser <u> | ` +
+        `join <ch> | leave <ch> | manual <ch> | unmanual <ch> | addlearn <ch> | removelearn <ch>`
       );
     }
 
@@ -464,19 +465,29 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "help") {
     if (!hasAnyAccess(tags, state)) {
-      return `Commands (${PREFIX}): say | markov <seed> | dadjoke | remind <user> <msg> | notify live/offline/category on/off | 8ball | mock <u> | story`;
+      return (
+        `Commands (${PREFIX}): ` +
+        `say | markov <seed> | dadjoke | gpt <q> | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
+        `lines | followage <u> | top | status | notify live/offline/category on/off`
+      );
     }
     if (isBroadcaster(tags)) {
       return (
-        `📺 Broadcaster/Mod (${PREFIX}): say | markov <seed> | dadjoke | remind | 8ball | mock <u> | story | compliment <u> | ` +
-        `start | stop | status | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
-        `join | leave | manual | unmanual | adduser <u> | removeuser <u> | users | channels | lines | removeme | followage <u> | top | notify`
+        `📺 Broadcaster/Mod (${PREFIX}): ` +
+        `say | markov <seed> | dadjoke | gpt <q> | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
+        `lines | followage <u> | top | status | notify | ` +
+        `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
+        `join | leave | manual | unmanual | removeme | ` +
+        `channels | users | adduser <u> | removeuser <u>`
       );
     }
     return (
-      `🔧 Mod/VIP (${PREFIX}): say | markov <seed> | dadjoke | remind | 8ball | mock <u> | story | compliment <u> | ` +
-      `start | stop | status | interval <s> | cooldown <n> | onlineonly | greeter | ` +
-      `adduser <u> | users | channels | lines | followage <u> | top | notify`
+      `🔧 Mod/VIP (${PREFIX}): ` +
+      `say | markov <seed> | dadjoke | gpt <q> | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
+      `lines | followage <u> | top | status | notify | ` +
+      `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
+      `join | leave | manual | unmanual | removeme | ` +
+      `channels | users | adduser <u> | removeuser <u>`
     );
   }
 
@@ -536,49 +547,7 @@ function handle(channel, tags, message, ctx) {
     return null;
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  if (cmd === 'gpt') {
-    const question = args.join(' ').trim();
-    if (!question) return `⚠️ Usage: ${PREFIX}gpt <question>`;
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) return `⚠️ GEMINI_API_KEY not set in .env`;
-    const { client } = ctx;
-    const replyTo = channel.startsWith('#') ? channel : `#${channel}`;
-    const user = (tags.username || '').toLowerCase();
-    Promise.resolve().then(async () => {
-      try {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              system_instruction: { parts: [{ text: 'You are a helpful Twitch chat assistant. Answer in 2-3 short sentences max. Be concise and casual. No markdown, no bullet points.' }] },
-              contents: [{ parts: [{ text: question }] }],
-              generationConfig: { maxOutputTokens: 120 },
-            }),
-          }
-        );
-        const data = await res.json();
-        const answer = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        if (!answer) return client.say(replyTo, '⚠️ Gemini did not respond.').catch(() => {});
-        const reply = `@${user} ${answer}`.slice(0, 490);
-        client.say(replyTo, reply).catch(() => {});
-      } catch (e) {
-        client.say(replyTo, `⚠️ Gemini request failed: ${e.message}`).catch(() => {});
-      }
-    });
-    return null;
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  if (!hasAnyAccess(tags, state)) return null;
+  // ── Public (any viewer) ────────────────────────────────────────────────────
 
   if (cmd === "8ball") {
     const RESPONSES = [
@@ -626,50 +595,8 @@ function handle(channel, tags, message, ctx) {
     return `@${target} ${sentence}`;
   }
 
-  if (cmd === "notify") {
-    const VALID_EVENTS = ["live", "offline", "category"];
-    const sub   = (args[0] || "").toLowerCase();
-    const onOff = (args[1] || "").toLowerCase();
-    const user  = (tags.username || "").toLowerCase();
-    if (VALID_EVENTS.includes(sub) && (onOff === "on" || onOff === "off")) {
-      if (!state.notifyUsers) state.notifyUsers = {};
-      if (!state.notifyUsers[ch]) state.notifyUsers[ch] = {};
-      if (!state.notifyUsers[ch][sub]) state.notifyUsers[ch][sub] = [];
-      if (onOff === "on") {
-        if (state.notifyUsers[ch][sub].includes(user)) return `@${user} Already subscribed to ${sub} notifications for #${ch}.`;
-        state.notifyUsers[ch][sub].push(user);
-        saveState();
-        const label = sub === "live" ? "goes live" : sub === "offline" ? "goes offline" : "changes category";
-        return `@${user} ✅ You'll be pinged when #${ch} ${label}!`;
-      } else {
-        const idx = state.notifyUsers[ch][sub].indexOf(user);
-        if (idx === -1) return `@${user} Not subscribed to ${sub} notifications for #${ch}.`;
-        state.notifyUsers[ch][sub].splice(idx, 1);
-        saveState();
-        return `@${user} 🔕 Unsubscribed from ${sub} notifications for #${ch}.`;
-      }
-    }
-    if (sub === "list") {
-      const chUsers = (state.notifyUsers && state.notifyUsers[ch]) || {};
-      return `🔔 #${ch} — 🔴 live: ${(chUsers.live||[]).length} | ⚫ offline: ${(chUsers.offline||[]).length} | 🎮 category: ${(chUsers.category||[]).length}`;
-    }
-    return `Usage: ${PREFIX}notify live/offline/category on/off | ${PREFIX}notify list`;
-  }
-
-  if (cmd === "channels") {
-    const postList   = state.postChannels.join(", ")          || "(none)";
-    const manualList = (state.manualChannels || []).join(", ") || "(none)";
-    const learnList  = state.learnChannels.join(", ")          || "(none)";
-    return `📡 Auto-posting: ${postList} | Manual-only: ${manualList} | Learning: ${learnList}`;
-  }
-
   if (cmd === "lines") {
     return `📚 Lines: ${markov.size} trained (min to post: ${state.minCorpus}).`;
-  }
-
-  if (cmd === "users") {
-    const list = (state.allowedUsers || []).join(", ") || "(none)";
-    return `👥 Owner: ${OWNER} | Allowed users: ${list} | Mods/VIPs can use ${PREFIX}say + basic commands`;
   }
 
   if (cmd === "followage") {
@@ -734,6 +661,107 @@ function handle(channel, tags, message, ctx) {
     return `🔤 Top words in corpus: ${top || "(not enough data)"}`;
   }
 
+  if (cmd === "status") {
+    const paused        = !!(state.channelSettings[ch] && state.channelSettings[ch].paused);
+    const channelActive = state.active && !paused;
+    const intervalSecs  = getChannelInterval(ch) / 1000;
+    const cooldown      = getChannelCooldown(ch);
+    const cdInfo        = cooldown > 0 ? `${cooldown} msgs` : "none";
+    return (
+      `📊 #${ch}: ${channelActive ? "▶ posting" : "⏸ paused"} | ` +
+      `Every: ${intervalSecs}s | Min messages: ${cdInfo} | ` +
+      `Corpus: ${markov.size.toLocaleString()} lines`
+    );
+  }
+
+  if (cmd === "notify") {
+    const VALID_EVENTS = ["live", "offline", "category"];
+    const sub   = (args[0] || "").toLowerCase();
+    const onOff = (args[1] || "").toLowerCase();
+    const user  = (tags.username || "").toLowerCase();
+    if (VALID_EVENTS.includes(sub) && (onOff === "on" || onOff === "off")) {
+      if (!state.notifyUsers) state.notifyUsers = {};
+      if (!state.notifyUsers[ch]) state.notifyUsers[ch] = {};
+      if (!state.notifyUsers[ch][sub]) state.notifyUsers[ch][sub] = [];
+      if (onOff === "on") {
+        if (state.notifyUsers[ch][sub].includes(user)) return `@${user} Already subscribed to ${sub} notifications for #${ch}.`;
+        state.notifyUsers[ch][sub].push(user);
+        saveState();
+        const label = sub === "live" ? "goes live" : sub === "offline" ? "goes offline" : "changes category";
+        return `@${user} ✅ You'll be pinged when #${ch} ${label}!`;
+      } else {
+        const idx = state.notifyUsers[ch][sub].indexOf(user);
+        if (idx === -1) return `@${user} Not subscribed to ${sub} notifications for #${ch}.`;
+        state.notifyUsers[ch][sub].splice(idx, 1);
+        saveState();
+        return `@${user} 🔕 Unsubscribed from ${sub} notifications for #${ch}.`;
+      }
+    }
+    if (sub === "list") {
+      if (!hasAnyAccess(tags, state)) return `@${(tags.username||"").toLowerCase()} ❌ Only mods/broadcaster can use ?notify list.`;
+      const chUsers = (state.notifyUsers && state.notifyUsers[ch]) || {};
+      return `🔔 #${ch} — 🔴 live: ${(chUsers.live||[]).length} | ⚫ offline: ${(chUsers.offline||[]).length} | 🎮 category: ${(chUsers.category||[]).length}`;
+    }
+    return `Usage: ${PREFIX}notify live/offline/category on/off | ${PREFIX}notify list`;
+  }
+
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (cmd === 'gpt') {
+    const question = args.join(' ').trim();
+    if (!question) return `⚠️ Usage: ${PREFIX}gpt <question>`;
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    if (!GEMINI_API_KEY) return `⚠️ GEMINI_API_KEY not set in .env`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith('#') ? channel : `#${channel}`;
+    const user = (tags.username || '').toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: 'You are a helpful Twitch chat assistant. Answer in 2-3 short sentences max. Be concise and casual. No markdown, no bullet points.' }] },
+              contents: [{ parts: [{ text: question }] }],
+              generationConfig: { maxOutputTokens: 120 },
+            }),
+          }
+        );
+        const data = await res.json();
+        const answer = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (!answer) return client.say(replyTo, '⚠️ Gemini did not respond.').catch(() => {});
+        const reply = `@${user} ${answer}`.slice(0, 490);
+        client.say(replyTo, reply).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `⚠️ Gemini request failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (!hasAnyAccess(tags, state)) return null;
+
+  if (cmd === "channels") {
+    const postList   = state.postChannels.join(", ")          || "(none)";
+    const manualList = (state.manualChannels || []).join(", ") || "(none)";
+    const learnList  = state.learnChannels.join(", ")          || "(none)";
+    return `📡 Auto-posting: ${postList} | Manual-only: ${manualList} | Learning: ${learnList}`;
+  }
+
+  if (cmd === "users") {
+    const list = (state.allowedUsers || []).join(", ") || "(none)";
+    return `👥 Owner: ${OWNER} | Allowed users: ${list} | Mods/VIPs can use ${PREFIX}say + basic commands`;
+  }
+
   if (cmd === "adduser") {
     const user = (args[0] || "").toLowerCase().trim();
     if (!user) return `⚠️ Usage: ${PREFIX}adduser <username>`;
@@ -757,19 +785,6 @@ function handle(channel, tags, message, ctx) {
     saveState();
     stopTimer(ch);
     return `⏸️ Auto-posting paused in #${ch}.`;
-  }
-
-  if (cmd === "status") {
-    const paused        = !!(state.channelSettings[ch] && state.channelSettings[ch].paused);
-    const channelActive = state.active && !paused;
-    const intervalSecs  = getChannelInterval(ch) / 1000;
-    const cooldown      = getChannelCooldown(ch);
-    const cdInfo        = cooldown > 0 ? `${cooldown} msgs` : "none";
-    return (
-      `📊 #${ch}: ${channelActive ? "▶ posting" : "⏸ paused"} | ` +
-      `Every: ${intervalSecs}s | Min messages: ${cdInfo} | ` +
-      `Corpus: ${markov.size.toLocaleString()} lines`
-    );
   }
 
   if (cmd === "interval") {
@@ -810,7 +825,7 @@ function handle(channel, tags, message, ctx) {
       : `🔕 First-message greeter disabled.`;
   }
 
-  // join / leave / manual / unmanual — scoped to the channel the command is typed in
+  // join / leave / manual / unmanual / removeme — scoped to own channel only
   if (cmd === "join") {
     if (state.postChannels.includes(ch)) return `Already posting in #${ch}.`;
     if (!state.channelSettings[ch]) state.channelSettings[ch] = {};
