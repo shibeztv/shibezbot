@@ -24,35 +24,37 @@ async function identify(channel) {
   return await queryShazam(audioBuffer);
 }
 
-// ── Step 1: streamlink --stream-url ───────────────────────────────────────────
-// Switched from yt-dlp because yt-dlp sends the OAuth token as an
-// Authorization header, but Twitch's metadata API requires it as a cookie
-// (auth-token), causing a 401. streamlink handles this natively.
+// ── Step 1: yt-dlp --get-url ──────────────────────────────────────────────────
+// Twitch's metadata endpoint requires auth as a cookie (auth-token), NOT as an
+// Authorization header. Passing --add-header "Cookie:auth-token=TOKEN" is the
+// correct way to authenticate with yt-dlp for Twitch streams.
 
 function getStreamUrl(channel) {
   return new Promise((resolve, reject) => {
     const rawToken = (process.env.OAUTH_TOKEN || "").replace(/^oauth:/i, "");
     const args = [
-      "--stream-url",
-      "--twitch-low-latency",
+      "--quiet",
+      "--no-warnings",
+      "--format", "best",
+      "--get-url",
     ];
     if (rawToken) {
-      // streamlink accepts the OAuth token as an API header
-      args.push("--twitch-api-header", `Authorization=OAuth ${rawToken}`);
+      // Pass token as a cookie — this is what Twitch's API actually checks
+      args.push("--add-header", `Cookie:auth-token=${rawToken}`);
     }
-    args.push(`twitch.tv/${channel}`, "best");
+    args.push(`https://www.twitch.tv/${channel}`);
 
-    console.log(`🎵 [song] Running: streamlink twitch.tv/${channel} best`);
+    console.log(`🎵 [song] Running: yt-dlp https://www.twitch.tv/${channel}`);
 
-    execFile("streamlink", args, { timeout: 20_000 }, (err, stdout, stderr) => {
+    execFile("yt-dlp", args, { timeout: 20_000 }, (err, stdout, stderr) => {
       if (err) {
-        console.error(`🎵 [song] streamlink error: ${stderr.trim() || err.message}`);
-        return reject(new Error(`streamlink failed: ${stderr.trim() || err.message}`));
+        console.error(`🎵 [song] yt-dlp error: ${stderr.trim() || err.message}`);
+        return reject(new Error(`yt-dlp failed: ${stderr.trim() || err.message}`));
       }
       const url = stdout.trim();
       if (!url) {
-        console.error(`🎵 [song] streamlink returned empty URL. stderr: ${stderr.trim()}`);
-        return reject(new Error("streamlink returned no URL — is the channel live?"));
+        console.error(`🎵 [song] yt-dlp returned empty URL. stderr: ${stderr.trim()}`);
+        return reject(new Error("yt-dlp returned no URL — is the channel live?"));
       }
       resolve(url);
     });
