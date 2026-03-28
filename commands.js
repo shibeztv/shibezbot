@@ -123,7 +123,7 @@ function handle(channel, tags, message, ctx) {
     }
 
     if (cmd === "song") {
-      handleSongCommand(channel, ch, ctx);
+      handleSongCommand(channel, ch, tags, ctx);
       return null;
     }
 
@@ -554,7 +554,7 @@ function handle(channel, tags, message, ctx) {
   }
 
   if (cmd === "song") {
-    handleSongCommand(channel, ch, ctx);
+    handleSongCommand(channel, ch, tags, ctx);
     return null;
   }
 
@@ -912,13 +912,14 @@ function normalise(ch) {
 const songCooldowns = {};  // { channelName: timestamp }
 const SONG_COOLDOWN_MS = 30_000;
 
-function handleSongCommand(channel, ch, ctx) {
+function handleSongCommand(channel, ch, tags, ctx) {
   const { client } = ctx;
   const target = channel.startsWith("#") ? channel : `#${channel}`;
+  const user = (tags.username || "").toLowerCase();
 
-  // Check if AUDD_API_KEY is configured
+  // Check if RAPIDAPI_KEY is configured
   if (!process.env.RAPIDAPI_KEY) {
-    client.say(target, "⚠️ ?song is not configured — RAPIDAPI_KEY is missing.").catch(() => {});
+    client.say(target, `@${user} ⚠️ ?song is not configured — RAPIDAPI_KEY is missing.`).catch(() => {});
     return;
   }
 
@@ -926,23 +927,23 @@ function handleSongCommand(channel, ch, ctx) {
   const last = songCooldowns[ch] || 0;
   const remaining = SONG_COOLDOWN_MS - (Date.now() - last);
   if (remaining > 0) {
-    client.say(target, `⏳ ?song is on cooldown for ${Math.ceil(remaining / 1000)}s.`).catch(() => {});
+    client.say(target, `@${user} ⏳ ?song is on cooldown for ${Math.ceil(remaining / 1000)}s.`).catch(() => {});
     return;
   }
   songCooldowns[ch] = Date.now();
 
-  client.say(target, "🎵 Listening to the stream, one sec...").catch(() => {});
+  client.say(target, `@${user} 🎵 Listening to the stream, one sec...`).catch(() => {});
 
   song.identify(ch).then((result) => {
     if (!result) {
-      client.say(target, "🎵 Couldn't identify the song — no music detected or not enough audio.").catch(() => {});
+      client.say(target, `@${user} 🎵 Couldn't identify the song — no music detected or not enough audio.`).catch(() => {});
     } else {
       const albumPart = result.album ? ` — ${result.album}` : "";
-      client.say(target, `🎵 Now playing: ${result.title} by ${result.artist}${albumPart}`).catch(() => {});
+      client.say(target, `@${user} 🎵 Now playing: ${result.title} by ${result.artist}${albumPart}`).catch(() => {});
     }
   }).catch((err) => {
     console.warn(`⚠️  [?song] ${err.message}`);
-    client.say(target, `⚠️ Song lookup failed: ${err.message}`).catch(() => {});
+    client.say(target, `@${user} ⚠️ Song lookup failed: ${err.message}`).catch(() => {});
   });
 }
 

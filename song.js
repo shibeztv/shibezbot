@@ -7,7 +7,7 @@ const https               = require("https");
 
 const RAPIDAPI_KEY  = process.env.RAPIDAPI_KEY || "";
 const RAPIDAPI_HOST = "shazam.p.rapidapi.com";
-const CAPTURE_SECS  = 8;
+const CAPTURE_SECS  = 10;
 
 async function identify(channel) {
   if (!RAPIDAPI_KEY) throw new Error("RAPIDAPI_KEY is not set in environment.");
@@ -25,6 +25,10 @@ async function identify(channel) {
 }
 
 // ── Step 1: yt-dlp --get-url ──────────────────────────────────────────────────
+// Twitch's metadata endpoint requires auth as a cookie (auth-token), NOT as an
+// Authorization header. Passing --add-header "Cookie:auth-token=TOKEN" is the
+// correct way to authenticate with yt-dlp for Twitch streams.
+
 function getStreamUrl(channel) {
   return new Promise((resolve, reject) => {
     const rawToken = (process.env.OAUTH_TOKEN || "").replace(/^oauth:/i, "");
@@ -35,6 +39,7 @@ function getStreamUrl(channel) {
       "--get-url",
     ];
     if (rawToken) {
+      // Pass token as a cookie — this is what Twitch's API actually checks
       args.push("--add-header", `Cookie:auth-token=${rawToken}`);
     }
     args.push(`https://www.twitch.tv/${channel}`);
@@ -57,6 +62,7 @@ function getStreamUrl(channel) {
 }
 
 // ── Step 2: ffmpeg reads HLS URL directly ────────────────────────────────────
+
 function captureFromUrl(url) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -74,8 +80,8 @@ function captureFromUrl(url) {
       "-i", url,
       "-t", String(CAPTURE_SECS),
       "-vn",
-      "-f", "wav",
-      "-ar", "22050",
+      "-f", "wav",       // WAV container — Shazam needs headers, not raw PCM
+      "-ar", "22050",    // 22kHz mono × 8s ≈ 352KB — safely under Shazam's 1MB cap
       "-ac", "1",
       "pipe:1",
     ], { stdio: ["ignore", "pipe", "pipe"] });
@@ -107,6 +113,7 @@ function captureFromUrl(url) {
 }
 
 // ── Step 3: Shazam via RapidAPI ───────────────────────────────────────────────
+
 function queryShazam(audioBuffer) {
   return new Promise((resolve, reject) => {
     const options = {
@@ -114,7 +121,7 @@ function queryShazam(audioBuffer) {
       hostname: RAPIDAPI_HOST,
       path:     "/songs/detect",
       headers: {
-        "content-type":   "application/octet-stream",
+        "content-type":   "application/octet-stream",  // raw binary, not base64 text
         "content-length": audioBuffer.length,
         "X-RapidAPI-Key":  RAPIDAPI_KEY,
         "X-RapidAPI-Host": RAPIDAPI_HOST,
@@ -122,7 +129,7 @@ function queryShazam(audioBuffer) {
     };
 
     const req = https.request(options, res => {
-      // ── Handle compressed responses ──────────────────────────────────────
+      // Handle gzip / brotli compressed responses from RapidAPI
       let stream = res;
       const encoding = res.headers["content-encoding"];
       if (encoding === "gzip" || encoding === "br") {
@@ -138,12 +145,11 @@ function queryShazam(audioBuffer) {
         const data = Buffer.concat(chunks).toString("utf8");
         console.log(`🎵 [song] Shazam status=${res.statusCode} body=${data.slice(0, 300)}`);
 
-        // ── Guard: empty body ────────────────────────────────────────────
-        if (!data.trim()) {
-          return reject(new Error(`Shazam returned empty body (HTTP ${res.statusCode})`));
+        // 204 = Shazam heard audio but found no match — not an error
+        if (res.statusCode === 204 || !data.trim()) {
+          return resolve(null);
         }
 
-        // ── Guard: non-200 ───────────────────────────────────────────────
         if (res.statusCode !== 200) {
           return reject(new Error(`Shazam HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
         }
@@ -165,7 +171,7 @@ function queryShazam(audioBuffer) {
     });
 
     req.on("error", err => reject(new Error(`Shazam request error: ${err.message}`)));
-    req.write(audioBuffer);
+    req.write(audioBuffer);  // send raw buffer directly
     req.end();
   });
 }
