@@ -85,7 +85,7 @@ function captureFromUrl(url) {
       "-vn",
       "-f", "wav",       // WAV container — Shazam needs headers, not raw PCM
       "-ar", "44100",    // 44.1kHz — full CD quality for better Shazam fingerprinting
-      "-ac", "1",
+      "-ac", "2",
       "pipe:1",
     ], { stdio: ["ignore", "pipe", "pipe"] });
 
@@ -131,7 +131,7 @@ function queryShazam(audioBuffer) {
     const options = {
       method:   "POST",
       hostname: RAPIDAPI_HOST,
-      path:     "/songs/detect",
+      path:     "/songs/v2/detect",
       headers: {
         "content-type":   "application/octet-stream",
         "content-length": audioBuffer.length,
