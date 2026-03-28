@@ -18,7 +18,7 @@ const url        = require("url");
 const AUDD_API_KEY  = process.env.AUDD_API_KEY || "";
 const AUDD_ENDPOINT = "https://api.audd.io/";
 const CAPTURE_SECS  = 8;   // seconds of audio to capture
-const TIMEOUT_MS    = 30_000; // max wait before giving up
+const TIMEOUT_MS    = 20_000; // max wait before giving up
 
 /**
  * Capture audio from a live Twitch stream and identify the song.
@@ -40,6 +40,14 @@ async function identify(channel) {
 
 function captureStreamAudio(channel) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    function settle(fn, val) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn(val);
+    }
+
     const streamUrl = `https://www.twitch.tv/${channel}`;
 
     // Strip "oauth:" prefix — streamlink wants the raw token
@@ -49,18 +57,17 @@ function captureStreamAudio(channel) {
       streamlinkArgs.splice(2, 0, "--twitch-api-header", `Authorization=OAuth ${rawToken}`);
     }
 
-    // streamlink pipes the best stream to stdout
     const streamlink = spawn("streamlink", streamlinkArgs);
 
     // ffmpeg reads from stdin, extracts CAPTURE_SECS seconds of mono WAV
     const ffmpeg = spawn("ffmpeg", [
-      "-i", "pipe:0",           // read from stdin
+      "-i", "pipe:0",
       "-t", String(CAPTURE_SECS),
-      "-vn",                    // no video
+      "-vn",
       "-f", "wav",
       "-ar", "44100",
-      "-ac", "1",               // mono
-      "pipe:1",                 // output to stdout
+      "-ac", "1",
+      "pipe:1",
     ], { stdio: ["pipe", "pipe", "ignore"] });
 
     // Pipe streamlink → ffmpeg
@@ -69,33 +76,31 @@ function captureStreamAudio(channel) {
     const chunks = [];
     ffmpeg.stdout.on("data", (chunk) => chunks.push(chunk));
 
-    ffmpeg.on("close", (code) => {
+    ffmpeg.on("close", () => {
       streamlink.kill("SIGKILL");
       if (chunks.length === 0) {
-        reject(new Error("ffmpeg produced no audio output."));
+        settle(reject, new Error("No audio captured — is the channel live?"));
       } else {
-        resolve(Buffer.concat(chunks));
+        settle(resolve, Buffer.concat(chunks));
       }
     });
 
     ffmpeg.on("error", (err) => {
       streamlink.kill("SIGKILL");
-      reject(new Error(`ffmpeg error: ${err.message}`));
+      settle(reject, new Error(`ffmpeg error: ${err.message}`));
     });
 
     streamlink.on("error", (err) => {
       ffmpeg.kill("SIGKILL");
-      reject(new Error(`streamlink error: ${err.message} — is streamlink installed?`));
+      settle(reject, new Error(`streamlink error: ${err.message} — is streamlink installed?`));
     });
 
-    // Hard timeout — kill both processes if they hang
+    // Hard timeout
     const timer = setTimeout(() => {
       streamlink.kill("SIGKILL");
       ffmpeg.kill("SIGKILL");
-      reject(new Error("Stream capture timed out."));
+      settle(reject, new Error("Stream capture timed out after 20s — is the channel live?"));
     }, TIMEOUT_MS);
-
-    ffmpeg.on("close", () => clearTimeout(timer));
   });
 }
 
