@@ -468,25 +468,23 @@ function handle(channel, tags, message, ctx) {
       return (
         `Commands (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | notify live/offline/category on/off`
+        `lines | followage <u> | top | status | join | leave | manual | removeme | notify live/offline/category on/off`
       );
     }
     if (isBroadcaster(tags)) {
       return (
         `📺 Broadcaster/Mod (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | notify | ` +
-        `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
-        `join | leave | manual | unmanual | removeme | ` +
+        `lines | followage <u> | top | status | join | leave | manual | removeme | notify | ` +
+        `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | unmanual | ` +
         `channels | users | adduser <u> | removeuser <u>`
       );
     }
     return (
       `🔧 Mod/VIP (${PREFIX}): ` +
       `say | markov <seed> | dadjoke | gpt <q> | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-      `lines | followage <u> | top | status | notify | ` +
-      `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
-      `join | leave | manual | unmanual | removeme | ` +
+      `lines | followage <u> | top | status | join | leave | manual | notify | ` +
+      `start | stop | interval <s> | cooldown <n> | onlineonly | greeter | ` +
       `channels | users | adduser <u> | removeuser <u>`
     );
   }
@@ -542,6 +540,39 @@ function handle(channel, tags, message, ctx) {
         client.say(target, data && data.joke ? `🥁 ${data.joke}` : "⚠️ Couldn't fetch a dad joke.").catch(() => {});
       } catch (e) {
         client.say(target, "⚠️ Couldn't reach the dad joke server.").catch(() => {});
+      }
+    });
+    return null;
+  }
+
+  if (cmd === "gpt") {
+    const question = args.join(" ").trim();
+    if (!question) return `⚠️ Usage: ${PREFIX}gpt <question>`;
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    if (!GEMINI_API_KEY) return `⚠️ GEMINI_API_KEY not set in .env`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: "You are a helpful Twitch chat assistant. Answer in 2-3 short sentences max. Be concise and casual. No markdown, no bullet points." }] },
+              contents: [{ parts: [{ text: question }] }],
+              generationConfig: { maxOutputTokens: 120 },
+            }),
+          }
+        );
+        const data = await res.json();
+        const answer = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (!answer) return client.say(replyTo, `⚠️ Gemini did not respond. ${JSON.stringify(data?.error || "")}`).catch(() => {});
+        client.say(replyTo, `@${user} ${answer}`.slice(0, 490)).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `⚠️ Gemini request failed: ${e.message}`).catch(() => {});
       }
     });
     return null;
@@ -674,6 +705,53 @@ function handle(channel, tags, message, ctx) {
     );
   }
 
+  if (cmd === "join") {
+    if (state.postChannels.includes(ch)) return `Already posting in #${ch}.`;
+    if (!state.channelSettings[ch]) state.channelSettings[ch] = {};
+    state.channelSettings[ch].paused    = true;
+    state.channelSettings[ch].onlineOnly = true;
+    state.channelSettings[ch].intervalMs = 3_600_000;
+    joinChannel(ch);
+    state.postChannels.push(ch);
+    saveState();
+    return `✅ Joined #${ch} — paused by default. Use ${PREFIX}start to begin posting.`;
+  }
+
+  if (cmd === "leave") {
+    const idx = state.postChannels.indexOf(ch);
+    if (idx === -1) return `Not currently posting in #${ch}.`;
+    leaveChannel(ch);
+    state.postChannels.splice(idx, 1);
+    saveState();
+    return `👋 Left #${ch}.`;
+  }
+
+  if (cmd === "manual") {
+    if (state.postChannels.includes(ch)) return `#${ch} is already a full post channel. Use ${PREFIX}leave first.`;
+    if (state.manualChannels.includes(ch)) return `Already in manual mode for #${ch}.`;
+    if (state.learnChannels.includes(ch)) {
+      state.learnChannels.splice(state.learnChannels.indexOf(ch), 1);
+    } else {
+      joinChannel(ch);
+    }
+    state.manualChannels.push(ch);
+    saveState();
+    return `✅ #${ch} set to manual mode — won't auto-post. Use ${PREFIX}say to post.`;
+  }
+
+  if (cmd === "removeme") {
+    const inPost   = state.postChannels.indexOf(ch);
+    const inManual = (state.manualChannels || []).indexOf(ch);
+    const inLearn  = state.learnChannels.indexOf(ch);
+    if (inPost === -1 && inManual === -1 && inLearn === -1) return `Bot is not active in #${ch}.`;
+    if (inPost   !== -1) state.postChannels.splice(inPost, 1);
+    if (inManual !== -1) state.manualChannels.splice(inManual, 1);
+    if (inLearn  !== -1) state.learnChannels.splice(inLearn, 1);
+    saveState();
+    setTimeout(() => leaveChannel(ch), 800);
+    return `👋 Bot is leaving #${ch}. The owner can re-add it with ${PREFIX}join.`;
+  }
+
   if (cmd === "notify") {
     const VALID_EVENTS = ["live", "offline", "category"];
     const sub   = (args[0] || "").toLowerCase();
@@ -709,40 +787,6 @@ function handle(channel, tags, message, ctx) {
   // ═══════════════════════════════════════════════════════════════════════════
   // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
   // ═══════════════════════════════════════════════════════════════════════════
-
-  if (cmd === 'gpt') {
-    const question = args.join(' ').trim();
-    if (!question) return `⚠️ Usage: ${PREFIX}gpt <question>`;
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) return `⚠️ GEMINI_API_KEY not set in .env`;
-    const { client } = ctx;
-    const replyTo = channel.startsWith('#') ? channel : `#${channel}`;
-    const user = (tags.username || '').toLowerCase();
-    Promise.resolve().then(async () => {
-      try {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              system_instruction: { parts: [{ text: 'You are a helpful Twitch chat assistant. Answer in 2-3 short sentences max. Be concise and casual. No markdown, no bullet points.' }] },
-              contents: [{ parts: [{ text: question }] }],
-              generationConfig: { maxOutputTokens: 120 },
-            }),
-          }
-        );
-        const data = await res.json();
-        const answer = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        if (!answer) return client.say(replyTo, '⚠️ Gemini did not respond.').catch(() => {});
-        const reply = `@${user} ${answer}`.slice(0, 490);
-        client.say(replyTo, reply).catch(() => {});
-      } catch (e) {
-        client.say(replyTo, `⚠️ Gemini request failed: ${e.message}`).catch(() => {});
-      }
-    });
-    return null;
-  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
@@ -825,41 +869,7 @@ function handle(channel, tags, message, ctx) {
       : `🔕 First-message greeter disabled.`;
   }
 
-  // join / leave / manual / unmanual / removeme — scoped to own channel only
-  if (cmd === "join") {
-    if (state.postChannels.includes(ch)) return `Already posting in #${ch}.`;
-    if (!state.channelSettings[ch]) state.channelSettings[ch] = {};
-    state.channelSettings[ch].paused    = true;
-    state.channelSettings[ch].onlineOnly = true;
-    state.channelSettings[ch].intervalMs = 3_600_000;
-    joinChannel(ch);
-    state.postChannels.push(ch);
-    saveState();
-    return `✅ Joined #${ch} — paused by default. Use ${PREFIX}start to begin posting.`;
-  }
-
-  if (cmd === "leave") {
-    const idx = state.postChannels.indexOf(ch);
-    if (idx === -1) return `Not currently posting in #${ch}.`;
-    leaveChannel(ch);
-    state.postChannels.splice(idx, 1);
-    saveState();
-    return `👋 Left #${ch}.`;
-  }
-
-  if (cmd === "manual") {
-    if (state.postChannels.includes(ch)) return `#${ch} is already a full post channel. Use ${PREFIX}leave first.`;
-    if (state.manualChannels.includes(ch)) return `Already in manual mode for #${ch}.`;
-    if (state.learnChannels.includes(ch)) {
-      state.learnChannels.splice(state.learnChannels.indexOf(ch), 1);
-    } else {
-      joinChannel(ch);
-    }
-    state.manualChannels.push(ch);
-    saveState();
-    return `✅ #${ch} set to manual mode — won't auto-post. Use ${PREFIX}say to post.`;
-  }
-
+  // join / leave / manual / unmanual — scoped to the channel the command is typed in
   if (cmd === "unmanual") {
     const idx = state.manualChannels.indexOf(ch);
     if (idx === -1) return `#${ch} is not in manual mode.`;
@@ -867,19 +877,6 @@ function handle(channel, tags, message, ctx) {
     state.manualChannels.splice(idx, 1);
     saveState();
     return `👋 Left manual channel #${ch}.`;
-  }
-
-  if (cmd === "removeme") {
-    const inPost   = state.postChannels.indexOf(ch);
-    const inManual = (state.manualChannels || []).indexOf(ch);
-    const inLearn  = state.learnChannels.indexOf(ch);
-    if (inPost === -1 && inManual === -1 && inLearn === -1) return `Bot is not active in #${ch}.`;
-    if (inPost   !== -1) state.postChannels.splice(inPost, 1);
-    if (inManual !== -1) state.manualChannels.splice(inManual, 1);
-    if (inLearn  !== -1) state.learnChannels.splice(inLearn, 1);
-    saveState();
-    setTimeout(() => leaveChannel(ch), 800);
-    return `👋 Bot is leaving #${ch}. The owner can re-add it with ${PREFIX}join.`;
   }
 
   return null;
