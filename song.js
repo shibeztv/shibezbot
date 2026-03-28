@@ -12,16 +12,19 @@ const CAPTURE_SECS  = 10;
 async function identify(channel) {
   if (!RAPIDAPI_KEY) throw new Error("RAPIDAPI_KEY is not set in environment.");
 
-  // Step 1: get direct stream URL via streamlink
+  // Step 1: get direct stream URL (only once — reuse for retry)
   const streamUrl = await getStreamUrl(channel);
   console.log(`🎵 [song] Got stream URL for #${channel}`);
 
-  // Step 2: capture audio from that URL via ffmpeg
-  const audioBuffer = await captureFromUrl(streamUrl);
-  console.log(`🎵 [song] Captured ${audioBuffer.length} bytes of audio`);
-
-  // Step 3: identify via Shazam
-  return await queryShazam(audioBuffer);
+  // Steps 2+3: try up to 2 times in case Shazam catches a quiet moment
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const audioBuffer = await captureFromUrl(streamUrl);
+    console.log(`🎵 [song] Attempt ${attempt}: captured ${audioBuffer.length} bytes`);
+    const result = await queryShazam(audioBuffer);
+    if (result) return result;
+    if (attempt < 2) console.log(`🎵 [song] No match on attempt ${attempt}, retrying...`);
+  }
+  return null;
 }
 
 // ── Step 1: yt-dlp --get-url ──────────────────────────────────────────────────
@@ -81,7 +84,7 @@ function captureFromUrl(url) {
       "-t", String(CAPTURE_SECS),
       "-vn",
       "-f", "wav",       // WAV container — Shazam needs headers, not raw PCM
-      "-ar", "22050",    // 22kHz mono × 8s ≈ 352KB — safely under Shazam's 1MB cap
+      "-ar", "44100",    // 44.1kHz — full CD quality for better Shazam fingerprinting
       "-ac", "1",
       "pipe:1",
     ], { stdio: ["ignore", "pipe", "pipe"] });
@@ -114,14 +117,23 @@ function captureFromUrl(url) {
 
 // ── Step 3: Shazam via RapidAPI ───────────────────────────────────────────────
 
+const MAX_SHAZAM_BYTES = 1_000_000; // Shazam hard cap
+
 function queryShazam(audioBuffer) {
+  // Trim to 1MB if over — preserves WAV header (44 bytes) at the front
+  if (audioBuffer.length > MAX_SHAZAM_BYTES) {
+    console.warn(`🎵 [song] Audio ${audioBuffer.length} bytes > 1MB, trimming`);
+    audioBuffer = audioBuffer.slice(0, MAX_SHAZAM_BYTES);
+  }
+  console.log(`🎵 [song] Sending ${audioBuffer.length} bytes to Shazam`);
+
   return new Promise((resolve, reject) => {
     const options = {
       method:   "POST",
       hostname: RAPIDAPI_HOST,
       path:     "/songs/detect",
       headers: {
-        "content-type":   "application/octet-stream",  // raw binary, not base64 text
+        "content-type":   "application/octet-stream",
         "content-length": audioBuffer.length,
         "X-RapidAPI-Key":  RAPIDAPI_KEY,
         "X-RapidAPI-Host": RAPIDAPI_HOST,
