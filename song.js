@@ -7,7 +7,7 @@ const https               = require("https");
 
 const RAPIDAPI_KEY  = process.env.RAPIDAPI_KEY || "";
 const RAPIDAPI_HOST = "shazam.p.rapidapi.com";
-const CAPTURE_SECS  = 5;
+const CAPTURE_SECS  = 12;
 
 async function identify(channel) {
   if (!RAPIDAPI_KEY) throw new Error("RAPIDAPI_KEY is not set in environment.");
@@ -80,8 +80,8 @@ function captureFromUrl(url) {
       "-i", url,
       "-t", String(CAPTURE_SECS),
       "-vn",
-      "-f", "s16le",
-      "-ar", "16000",
+      "-f", "wav",       // WAV container — Shazam needs headers, not raw PCM
+      "-ar", "44100",    // 44.1 kHz — Shazam's expected sample rate
       "-ac", "1",
       "pipe:1",
     ], { stdio: ["ignore", "pipe", "pipe"] });
