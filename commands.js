@@ -483,17 +483,20 @@ function handle(channel, tags, message, ctx) {
   if (cmd === "say") {
     const SAY_COOLDOWN_MS = 5 * 60 * 1000;
     const user = (tags.username || "").toLowerCase();
-    const last = ctx.sayCooldowns[user] || 0;
-    const remaining = SAY_COOLDOWN_MS - (Date.now() - last);
-    if (remaining > 0) {
-      const secs = Math.ceil(remaining / 1000);
-      const mins = Math.floor(secs / 60);
-      const s    = secs % 60;
-      return `@${user} ⏳ You can use ${PREFIX}say again in ${mins}m ${s}s.`;
+    // Mods, VIPs, allowed users and above get no cooldown on ?say
+    if (!hasAnyAccess(tags, state)) {
+      const last = ctx.sayCooldowns[user] || 0;
+      const remaining = SAY_COOLDOWN_MS - (Date.now() - last);
+      if (remaining > 0) {
+        const secs = Math.ceil(remaining / 1000);
+        const mins = Math.floor(secs / 60);
+        const s    = secs % 60;
+        return `@${user} ⏳ You can use ${PREFIX}say again in ${mins}m ${s}s.`;
+      }
+      ctx.sayCooldowns[user] = Date.now();
     }
     const result = postNow(channel);
     if (!result) return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`;
-    ctx.sayCooldowns[user] = Date.now();
     return null;
   }
 
@@ -742,17 +745,6 @@ function handle(channel, tags, message, ctx) {
     return `✅ ${user} can now use bot commands.`;
   }
 
-  if (cmd === "removeuser") {
-    const user = (args[0] || "").toLowerCase().trim();
-    if (!user) return `⚠️ Usage: ${PREFIX}removeuser <username>`;
-    if (!state.allowedUsers) return `${user} doesn't have access.`;
-    const idx = state.allowedUsers.indexOf(user);
-    if (idx === -1) return `${user} doesn't have access.`;
-    state.allowedUsers.splice(idx, 1);
-    saveState();
-    return `🚫 Removed ${user}'s access.`;
-  }
-
   if (cmd === "start") {
     setChannelSetting(ch, "paused", false);
     saveState();
@@ -799,14 +791,6 @@ function handle(channel, tags, message, ctx) {
     return n === 0
       ? `💬 [#${ch}] Cooldown disabled.`
       : `💬 [#${ch}] Cooldown set to ${n} messages between bot posts.`;
-  }
-
-  if (cmd === "minlines") {
-    const n = parseInt(args[0]);
-    if (isNaN(n) || n < 1) return `⚠️ Usage: ${PREFIX}minlines <number>`;
-    state.minCorpus = n;
-    saveState();
-    return `📚 Minimum lines set to ${n} (current: ${markov.size}).`;
   }
 
   if (cmd === "onlineonly") {
