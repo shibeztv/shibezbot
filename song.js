@@ -25,10 +25,6 @@ async function identify(channel) {
 }
 
 // ── Step 1: yt-dlp --get-url ──────────────────────────────────────────────────
-// Twitch's metadata endpoint requires auth as a cookie (auth-token), NOT as an
-// Authorization header. Passing --add-header "Cookie:auth-token=TOKEN" is the
-// correct way to authenticate with yt-dlp for Twitch streams.
-
 function getStreamUrl(channel) {
   return new Promise((resolve, reject) => {
     const rawToken = (process.env.OAUTH_TOKEN || "").replace(/^oauth:/i, "");
@@ -39,7 +35,6 @@ function getStreamUrl(channel) {
       "--get-url",
     ];
     if (rawToken) {
-      // Pass token as a cookie — this is what Twitch's API actually checks
       args.push("--add-header", `Cookie:auth-token=${rawToken}`);
     }
     args.push(`https://www.twitch.tv/${channel}`);
@@ -62,7 +57,6 @@ function getStreamUrl(channel) {
 }
 
 // ── Step 2: ffmpeg reads HLS URL directly ────────────────────────────────────
-
 function captureFromUrl(url) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -80,8 +74,8 @@ function captureFromUrl(url) {
       "-i", url,
       "-t", String(CAPTURE_SECS),
       "-vn",
-      "-f", "wav",       // WAV container — Shazam needs headers, not raw PCM
-      "-ar", "22050",    // 22kHz mono × 8s ≈ 352KB — safely under Shazam's 1MB cap
+      "-f", "wav",
+      "-ar", "22050",
       "-ac", "1",
       "pipe:1",
     ], { stdio: ["ignore", "pipe", "pipe"] });
@@ -113,7 +107,6 @@ function captureFromUrl(url) {
 }
 
 // ── Step 3: Shazam via RapidAPI ───────────────────────────────────────────────
-
 function queryShazam(audioBuffer) {
   return new Promise((resolve, reject) => {
     const options = {
@@ -121,7 +114,7 @@ function queryShazam(audioBuffer) {
       hostname: RAPIDAPI_HOST,
       path:     "/songs/detect",
       headers: {
-        "content-type":   "application/octet-stream",  // raw binary, not base64 text
+        "content-type":   "application/octet-stream",
         "content-length": audioBuffer.length,
         "X-RapidAPI-Key":  RAPIDAPI_KEY,
         "X-RapidAPI-Host": RAPIDAPI_HOST,
@@ -129,10 +122,32 @@ function queryShazam(audioBuffer) {
     };
 
     const req = https.request(options, res => {
-      let data = "";
-      res.on("data", chunk => { data += chunk; });
-      res.on("end", () => {
-        console.log(`🎵 [song] Shazam response: ${data.slice(0, 200)}`);
+      // ── Handle compressed responses ──────────────────────────────────────
+      let stream = res;
+      const encoding = res.headers["content-encoding"];
+      if (encoding === "gzip" || encoding === "br") {
+        const zlib = require("zlib");
+        stream = encoding === "gzip"
+          ? res.pipe(zlib.createGunzip())
+          : res.pipe(zlib.createBrotliDecompress());
+      }
+
+      const chunks = [];
+      stream.on("data", chunk => chunks.push(chunk));
+      stream.on("end", () => {
+        const data = Buffer.concat(chunks).toString("utf8");
+        console.log(`🎵 [song] Shazam status=${res.statusCode} body=${data.slice(0, 300)}`);
+
+        // ── Guard: empty body ────────────────────────────────────────────
+        if (!data.trim()) {
+          return reject(new Error(`Shazam returned empty body (HTTP ${res.statusCode})`));
+        }
+
+        // ── Guard: non-200 ───────────────────────────────────────────────
+        if (res.statusCode !== 200) {
+          return reject(new Error(`Shazam HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
+        }
+
         try {
           const json = JSON.parse(data);
           const track = json?.track;
@@ -142,13 +157,15 @@ function queryShazam(audioBuffer) {
             resolve(null);
           }
         } catch (e) {
-          reject(new Error(`Shazam parse error: ${e.message}`));
+          reject(new Error(`Shazam parse error: ${e.message} — raw: ${data.slice(0, 200)}`));
         }
       });
+
+      stream.on("error", err => reject(new Error(`Shazam stream error: ${err.message}`)));
     });
 
     req.on("error", err => reject(new Error(`Shazam request error: ${err.message}`)));
-    req.write(audioBuffer);  // send raw buffer directly
+    req.write(audioBuffer);
     req.end();
   });
 }
