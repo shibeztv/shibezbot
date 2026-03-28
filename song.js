@@ -79,7 +79,7 @@ function captureStreamAudio(channel) {
     ffmpeg.on("close", () => {
       streamlink.kill("SIGKILL");
       if (chunks.length === 0) {
-        settle(reject, new Error("No audio captured — is the channel live?"));
+        settle(reject, new Error("No audio data from stream — is the channel live and is streamlink working?"));
       } else {
         settle(resolve, Buffer.concat(chunks));
       }
@@ -99,7 +99,7 @@ function captureStreamAudio(channel) {
     const timer = setTimeout(() => {
       streamlink.kill("SIGKILL");
       ffmpeg.kill("SIGKILL");
-      settle(reject, new Error("Stream capture timed out after 20s — is the channel live?"));
+      settle(reject, new Error("Stream capture timed out (20s) — channel may be offline or streamlink can't reach it"));
     }, TIMEOUT_MS);
   });
 }

@@ -462,8 +462,7 @@ function handle(channel, tags, message, ctx) {
       return `Usage: ${PREFIX}notify live/offline/category on/off | ${PREFIX}notify list`;
     }
 
-    // Unknown command — owner typed something with ? prefix but it's not a real command
-    return null;
+    // Unknown command — fall through to public commands so owner can also use ?gpt, ?song, etc.
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
