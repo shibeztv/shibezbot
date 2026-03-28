@@ -72,7 +72,7 @@ function handle(channel, tags, message, ctx) {
     if (cmd === "help") {
       return (
         `👑 Owner (${PREFIX}): ` +
-        `say | markov <seed> | dadjoke | gpt <q> | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
+        `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
         `lines | followage <u> | top | status | join | leave | manual | removeme | notify | ` +
         `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | unmanual | ` +
         `channels | users | adduser <u> | removeuser <u> | ` +
@@ -474,14 +474,14 @@ function handle(channel, tags, message, ctx) {
     if (!hasAnyAccess(tags, state)) {
       return (
         `Commands (${PREFIX}): ` +
-        `say | markov <seed> | dadjoke | gpt <q> | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
+        `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
         `lines | followage <u> | top | status | notify live/offline/category on/off`
       );
     }
     if (isBroadcaster(tags)) {
       return (
         `📺 Broadcaster/Mod (${PREFIX}): ` +
-        `say | markov <seed> | dadjoke | gpt <q> | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
+        `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
         `lines | followage <u> | top | status | notify | ` +
         `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
         `join | leave | manual | unmanual | removeme | ` +
@@ -490,7 +490,7 @@ function handle(channel, tags, message, ctx) {
     }
     return (
       `🔧 Mod/VIP (${PREFIX}): ` +
-      `say | markov <seed> | dadjoke | gpt <q> | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
+      `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
       `lines | followage <u> | top | status | notify | ` +
       `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
       `join | leave | manual | unmanual | removeme | ` +
