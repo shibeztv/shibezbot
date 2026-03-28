@@ -122,6 +122,39 @@ function handle(channel, tags, message, ctx) {
       return null;
     }
 
+    if (cmd === "gpt") {
+      const question = args.join(" ").trim();
+      if (!question) return `⚠️ Usage: ${PREFIX}gpt <question>`;
+      const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+      if (!GEMINI_API_KEY) return `⚠️ GEMINI_API_KEY not set in .env`;
+      const { client } = ctx;
+      const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+      const user = (tags.username || "").toLowerCase();
+      Promise.resolve().then(async () => {
+        try {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                system_instruction: { parts: [{ text: "You are a helpful Twitch chat assistant. Answer in 2-3 short sentences max. Be concise and casual. No markdown, no bullet points." }] },
+                contents: [{ parts: [{ text: question }] }],
+                generationConfig: { maxOutputTokens: 120 },
+              }),
+            }
+          );
+          const data = await res.json();
+          const answer = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+          if (!answer) return client.say(replyTo, "⚠️ Gemini did not respond.").catch(() => {});
+          client.say(replyTo, `@${user} ${answer}`.slice(0, 490)).catch(() => {});
+        } catch (e) {
+          client.say(replyTo, `⚠️ Gemini request failed: ${e.message}`).catch(() => {});
+        }
+      });
+      return null;
+    }
+
     if (cmd === "song") {
       handleSongCommand(channel, ch, ctx);
       return null;

@@ -42,14 +42,15 @@ function captureStreamAudio(channel) {
   return new Promise((resolve, reject) => {
     const streamUrl = `https://www.twitch.tv/${channel}`;
 
+    // Strip "oauth:" prefix — streamlink wants the raw token
+    const rawToken = (process.env.OAUTH_TOKEN || "").replace(/^oauth:/i, "");
+    const streamlinkArgs = ["--stdout", "--quiet", streamUrl, "best"];
+    if (rawToken) {
+      streamlinkArgs.splice(2, 0, "--twitch-api-header", `Authorization=OAuth ${rawToken}`);
+    }
+
     // streamlink pipes the best stream to stdout
-    const streamlink = spawn("streamlink", [
-      "--stdout",
-      "--twitch-disable-ads",
-      "--quiet",
-      streamUrl,
-      "best",
-    ]);
+    const streamlink = spawn("streamlink", streamlinkArgs);
 
     // ffmpeg reads from stdin, extracts CAPTURE_SECS seconds of mono WAV
     const ffmpeg = spawn("ffmpeg", [
