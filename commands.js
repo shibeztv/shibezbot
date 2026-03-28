@@ -917,8 +917,8 @@ function handleSongCommand(channel, ch, ctx) {
   const target = channel.startsWith("#") ? channel : `#${channel}`;
 
   // Check if AUDD_API_KEY is configured
-  if (!process.env.AUDD_API_KEY) {
-    client.say(target, "⚠️ ?song is not configured — AUDD_API_KEY is missing.").catch(() => {});
+  if (!process.env.RAPIDAPI_KEY) {
+    client.say(target, "⚠️ ?song is not configured — RAPIDAPI_KEY is missing.").catch(() => {});
     return;
   }
 

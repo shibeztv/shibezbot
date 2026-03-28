@@ -1,42 +1,41 @@
 /**
- * song.js — Live stream song recognition
+ * song.js — Live stream song recognition via Shazam (RapidAPI)
  *
  * Flow:
- *   1. streamlink grabs the live Twitch stream (best quality, audio only piped)
- *   2. ffmpeg extracts ~8 seconds of audio and converts to WAV
- *   3. WAV is base64-encoded and sent to AudD music recognition API
- *   4. Returns { title, artist, album, label } or null
+ *   1. streamlink grabs the live Twitch stream (best quality, piped)
+ *   2. ffmpeg extracts ~5 seconds of audio and converts to raw PCM (s16le, 16kHz, mono)
+ *   3. PCM is base64-encoded and sent to Shazam's detect endpoint via RapidAPI
+ *   4. Returns { title, artist } or null if no match
  *
  * Requires on the system: ffmpeg, streamlink (installed via Dockerfile)
- * Requires env: AUDD_API_KEY
+ * Requires env: RAPIDAPI_KEY
  */
 
-const { spawn }  = require("child_process");
-const https      = require("https");
-const url        = require("url");
+const { spawn } = require("child_process");
+const https     = require("https");
 
-const AUDD_API_KEY  = process.env.AUDD_API_KEY || "";
-const AUDD_ENDPOINT = "https://api.audd.io/";
-const CAPTURE_SECS  = 8;   // seconds of audio to capture
-const TIMEOUT_MS    = 20_000; // max wait before giving up
+const RAPIDAPI_KEY  = process.env.RAPIDAPI_KEY || "";
+const RAPIDAPI_HOST = "shazam.p.rapidapi.com";
+const CAPTURE_SECS  = 5;
+const TIMEOUT_MS    = 25_000;
 
 /**
  * Capture audio from a live Twitch stream and identify the song.
- * @param {string} channel  — Twitch channel name (no #)
- * @returns {Promise<{title:string, artist:string, album?:string}|null>}
+ * @param {string} channel — Twitch channel name (no #)
+ * @returns {Promise<{title:string, artist:string}|null>}
  */
 async function identify(channel) {
-  if (!AUDD_API_KEY) throw new Error("AUDD_API_KEY is not set in environment.");
+  if (!RAPIDAPI_KEY) throw new Error("RAPIDAPI_KEY is not set in environment.");
 
   const audioBuffer = await captureStreamAudio(channel);
   if (!audioBuffer || audioBuffer.length === 0) {
     throw new Error("Could not capture stream audio. Is the channel live?");
   }
 
-  return await queryAudd(audioBuffer);
+  return await queryShazam(audioBuffer);
 }
 
-// ── Step 1: capture audio ──────────────────────────────────────────────────────
+// ── Step 1: capture audio ─────────────────────────────────────────────────────
 
 function captureStreamAudio(channel) {
   return new Promise((resolve, reject) => {
@@ -48,10 +47,9 @@ function captureStreamAudio(channel) {
       fn(val);
     }
 
-    const streamUrl = `https://www.twitch.tv/${channel}`;
+    const streamUrl  = `https://www.twitch.tv/${channel}`;
+    const rawToken   = (process.env.OAUTH_TOKEN || "").replace(/^oauth:/i, "");
 
-    // Strip "oauth:" prefix — streamlink wants the raw token
-    const rawToken = (process.env.OAUTH_TOKEN || "").replace(/^oauth:/i, "");
     const streamlinkArgs = ["--stdout", "--quiet", streamUrl, "best"];
     if (rawToken) {
       streamlinkArgs.splice(2, 0, "--twitch-api-header", `Authorization=OAuth ${rawToken}`);
@@ -59,101 +57,90 @@ function captureStreamAudio(channel) {
 
     const streamlink = spawn("streamlink", streamlinkArgs);
 
-    // ffmpeg reads from stdin, extracts CAPTURE_SECS seconds of mono WAV
+    // Shazam expects raw PCM: signed 16-bit little-endian, 16kHz, mono
     const ffmpeg = spawn("ffmpeg", [
       "-i", "pipe:0",
       "-t", String(CAPTURE_SECS),
       "-vn",
-      "-f", "wav",
-      "-ar", "44100",
+      "-f", "s16le",
+      "-ar", "16000",
       "-ac", "1",
       "pipe:1",
     ], { stdio: ["pipe", "pipe", "ignore"] });
 
-    // Pipe streamlink → ffmpeg
     streamlink.stdout.pipe(ffmpeg.stdin);
 
     const chunks = [];
-    ffmpeg.stdout.on("data", (chunk) => chunks.push(chunk));
+    ffmpeg.stdout.on("data", chunk => chunks.push(chunk));
 
     ffmpeg.on("close", () => {
       streamlink.kill("SIGKILL");
       if (chunks.length === 0) {
-        settle(reject, new Error("No audio data from stream — is the channel live and is streamlink working?"));
+        settle(reject, new Error("No audio data from stream — is the channel live?"));
       } else {
         settle(resolve, Buffer.concat(chunks));
       }
     });
 
-    ffmpeg.on("error", (err) => {
+    ffmpeg.on("error", err => {
       streamlink.kill("SIGKILL");
       settle(reject, new Error(`ffmpeg error: ${err.message}`));
     });
 
-    streamlink.on("error", (err) => {
+    streamlink.on("error", err => {
       ffmpeg.kill("SIGKILL");
-      settle(reject, new Error(`streamlink error: ${err.message} — is streamlink installed?`));
+      settle(reject, new Error(`streamlink error: ${err.message}`));
     });
 
-    // Hard timeout
     const timer = setTimeout(() => {
       streamlink.kill("SIGKILL");
       ffmpeg.kill("SIGKILL");
-      settle(reject, new Error("Stream capture timed out (20s) — channel may be offline or streamlink can't reach it"));
+      settle(reject, new Error("Stream capture timed out — channel may be offline"));
     }, TIMEOUT_MS);
   });
 }
 
-// ── Step 2: query AudD ────────────────────────────────────────────────────────
+// ── Step 2: query Shazam via RapidAPI ────────────────────────────────────────
 
-function queryAudd(audioBuffer) {
+function queryShazam(audioBuffer) {
   return new Promise((resolve, reject) => {
     const base64Audio = audioBuffer.toString("base64");
 
-    // AudD accepts multipart/form-data or JSON with base64 audio
-    const body = JSON.stringify({
-      api_token: AUDD_API_KEY,
-      audio:     base64Audio,
-      return:    "apple_music,spotify",
-    });
-
     const options = {
-      method:  "POST",
+      method:   "POST",
+      hostname: RAPIDAPI_HOST,
+      path:     "/songs/detect",
       headers: {
-        "Content-Type":   "application/json",
-        "Content-Length": Buffer.byteLength(body),
+        "content-type":    "text/plain",
+        "X-RapidAPI-Key":  RAPIDAPI_KEY,
+        "X-RapidAPI-Host": RAPIDAPI_HOST,
       },
     };
 
-    const parsed = url.parse(AUDD_ENDPOINT);
-    options.hostname = parsed.hostname;
-    options.path     = parsed.path;
-
-    const req = https.request(options, (res) => {
+    const req = https.request(options, res => {
       let data = "";
-      res.on("data", (chunk) => { data += chunk; });
+      res.on("data", chunk => { data += chunk; });
       res.on("end", () => {
         try {
           const json = JSON.parse(data);
-          if (json.status === "success" && json.result) {
+          // Shazam returns { track: { title, subtitle, ... } }
+          const track = json?.track;
+          if (track && track.title) {
             resolve({
-              title:  json.result.title  || "Unknown",
-              artist: json.result.artist || "Unknown",
-              album:  json.result.album  || null,
-              label:  json.result.label  || null,
+              title:  track.title,
+              artist: track.subtitle || "Unknown",
             });
           } else {
-            // No match found
-            resolve(null);
+            resolve(null); // no match
           }
         } catch (e) {
-          reject(new Error(`AudD response parse error: ${e.message}`));
+          reject(new Error(`Shazam response parse error: ${e.message}`));
         }
       });
     });
 
-    req.on("error", (err) => reject(new Error(`AudD request error: ${err.message}`)));
-    req.write(body);
+    req.on("error", err => reject(new Error(`Shazam request error: ${err.message}`)));
+    req.write(base64Audio);
     req.end();
   });
 }
