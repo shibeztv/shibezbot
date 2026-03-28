@@ -116,14 +116,13 @@ function captureFromUrl(url) {
 
 function queryShazam(audioBuffer) {
   return new Promise((resolve, reject) => {
-    const base64Audio = audioBuffer.toString("base64");
-
     const options = {
       method:   "POST",
       hostname: RAPIDAPI_HOST,
       path:     "/songs/detect",
       headers: {
-        "content-type":    "text/plain",
+        "content-type":   "application/octet-stream",  // raw binary, not base64 text
+        "content-length": audioBuffer.length,
         "X-RapidAPI-Key":  RAPIDAPI_KEY,
         "X-RapidAPI-Host": RAPIDAPI_HOST,
       },
@@ -149,7 +148,7 @@ function queryShazam(audioBuffer) {
     });
 
     req.on("error", err => reject(new Error(`Shazam request error: ${err.message}`)));
-    req.write(base64Audio);
+    req.write(audioBuffer);  // send raw buffer directly
     req.end();
   });
 }
