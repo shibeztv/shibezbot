@@ -63,9 +63,6 @@ function handle(channel, tags, message, ctx) {
 
   const ch = channel.replace(/^#/, "");
 
-  // ── Manual mode gate — only owner can use commands in manual channels ──────
-  if ((state.manualChannels || []).includes(ch) && !isOwner(tags)) return null;
-
   // ═══════════════════════════════════════════════════════════════════════════
   // ── OWNER BLOCK — shlbez has full access to everything, from any channel ──
   // ═══════════════════════════════════════════════════════════════════════════
@@ -76,7 +73,8 @@ function handle(channel, tags, message, ctx) {
       return (
         `👑 Owner (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | join | leave | manual | removeme | notify | ` +
+        `lines | followage <u> | top | status | forsen | copypasta | monka | iq <u> | clip | ` +
+        `join | leave | manual | removeme | notify | ` +
         `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | unmanual | ` +
         `channels | users | adduser <u> | removeuser <u> | ` +
         `join <ch> | leave <ch> | manual <ch> | unmanual <ch> | addlearn <ch> | removelearn <ch>`
@@ -477,14 +475,15 @@ function handle(channel, tags, message, ctx) {
       return (
         `Commands (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | notify live/offline/category on/off`
+        `lines | followage <u> | top | status | notify live/offline/category on/off | ` +
+        `forsen | copypasta | monka | iq <u> | clip`
       );
     }
     if (isBroadcaster(tags)) {
       return (
         `📺 Broadcaster/Mod (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | notify | ` +
+        `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | ` +
         `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
         `join | leave | manual | unmanual | removeme | ` +
         `channels | users | adduser <u> | removeuser <u>`
@@ -493,7 +492,7 @@ function handle(channel, tags, message, ctx) {
     return (
       `🔧 Mod/VIP (${PREFIX}): ` +
       `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-      `lines | followage <u> | top | status | notify | ` +
+      `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | ` +
       `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
       `join | leave | manual | unmanual | removeme | ` +
       `channels | users | adduser <u> | removeuser <u>`
@@ -765,6 +764,59 @@ function handle(channel, tags, message, ctx) {
     return null;
   }
 
+
+  if (cmd === "forsen") {
+    const user = (tags.username || "").toLowerCase();
+    return `@${user} ${FORSEN_LINES[Math.floor(Math.random() * FORSEN_LINES.length)]}`;
+  }
+
+  if (cmd === "copypasta") {
+    const user = (tags.username || "").toLowerCase();
+    const pasta = COPYPASTAS[Math.floor(Math.random() * COPYPASTAS.length)];
+    return `@${user} ${pasta}`.slice(0, 499);
+  }
+
+  if (cmd === "monka") {
+    const user = (tags.username || "").toLowerCase();
+    return `@${user} ${MONKA_LINES[Math.floor(Math.random() * MONKA_LINES.length)]}`;
+  }
+
+  if (cmd === "iq") {
+    const target = (args[0] || tags.username || "").toLowerCase().replace(/^@/, "").trim();
+    // Seed by username so the same user always gets the same IQ
+    let hash = 0;
+    for (let i = 0; i < target.length; i++) hash = (hash * 31 + target.charCodeAt(i)) >>> 0;
+    const iq = 50 + (hash % 101); // range 50–150
+    const label =
+      iq >= 140 ? "galaxy brain 5Head" :
+      iq >= 120 ? "pretty smart ngl" :
+      iq >= 100 ? "average chat member" :
+      iq >= 80  ? "slightly below average Pepega" :
+                  "Pepega Clap";
+    return `🧠 ${target}'s IQ is ${iq} — ${label}`;
+  }
+
+  if (cmd === "clip") {
+    if (!helixGet) return `⚠️ Twitch API not configured (missing TWITCH_CLIENT_ID/SECRET).`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        const bcData = await helixGet(`users?login=${encodeURIComponent(ch)}`);
+        const broadcasterId = bcData.data?.[0]?.id;
+        if (!broadcasterId) return client.say(replyTo, `⚠️ Channel #${ch} not found on Twitch.`).catch(() => {});
+        const clipData = await helixGet(`clips?broadcaster_id=${broadcasterId}&first=1`);
+        const clip = clipData.data?.[0];
+        if (!clip) return client.say(replyTo, `@${user} 🎬 No clips found for #${ch}.`).catch(() => {});
+        client.say(replyTo, `@${user} 🎬 Latest clip: "${clip.title}" by ${clip.creator_name} — ${clip.url}`).catch(() => {});
+      } catch (err) {
+        client.say(replyTo, `@${user} ⚠️ Clip lookup failed: ${err.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
   // ═══════════════════════════════════════════════════════════════════════════
@@ -910,6 +962,60 @@ function normalise(ch) {
   if (!ch) return null;
   return ch.replace(/^#/, "").toLowerCase().trim();
 }
+
+
+// ── Forsen one-liners ─────────────────────────────────────────────────────────
+const FORSEN_LINES = [
+  "forsenScoots he knows forsenScoots",
+  "NA education LULW",
+  "its joever for forsen residents OMEGALUL",
+  "bajs rise up forsenCD",
+  "forsen never fails to disappoint LULW",
+  "W forsen W",
+  "forsen mentioned LULW get in here bajs",
+  "forsenE he's been sitting like that for 4 hours",
+  "forsen is literally me fr fr",
+  "this is a forsen moment forsenScoots",
+  "no forsen no life forsenCD",
+  "LULW just LULW",
+  "he really said forsenE and walked away",
+  "chat malding forsen chilling LULW",
+  "forsen diff OMEGALUL",
+];
+
+// ── Classic Twitch copypastas ─────────────────────────────────────────────────
+const COPYPASTAS = [
+  "Kripp is such a casual. He plays Path of Exile on STANDARD. What a noob. I bet he has never even played Hardcore. What a waste of a player.",
+  "I used to be a real ad. 󠀀",
+  "gachiGASM MY BROTHER gachiGASM WE ARE FAMILY gachiGASM I LOVE YOU gachiGASM",
+  "ATTENTION CHAT. This is now a Pogchamp only zone. Any non-Pogchamp emotes will be met with a 600 second timeout. Thank you for your cooperation.",
+  "monkaS guys... monkaS chat... monkaS I don't feel so good monkaS",
+  "This guy is actually insane. Like genuinely one of the best to ever do it. I'm not even joking. Top 5 easily. Maybe top 3. Possibly number 1.",
+  "Pepega AND I'M LIKE Pepega BABY Pepega WHAT ARE YOU DOING Pepega",
+  "FeelsWeirdMan something feels off about today chat FeelsWeirdMan",
+  "Clap GOOD STREAM Clap GOOD STREAM Clap GOOD STREAM Clap",
+  "PogChamp THE MOMENT PogChamp WE'VE ALL PogChamp BEEN WAITING PogChamp FOR PogChamp",
+  "5Head actually quite a trivial solution if you think about it for more than 2 seconds 5Head",
+  "OMEGALUL HE FELL OMEGALUL HE ACTUALLY FELL OMEGALUL",
+  "chat is this real? is this actually happening right now? I can't believe what I'm seeing. This is insane. Pog",
+  "This stream has changed my life. I was failing school, my girlfriend left me, my dog died. Then I found this stream. Now I'm still failing school but at least I'm here.",
+];
+
+// ── Monka responses ───────────────────────────────────────────────────────────
+const MONKA_LINES = [
+  "monkaS what was that",
+  "monkaW bro...",
+  "monkaHmm something's not right chat",
+  "monkaGIGA he's here",
+  "monkaS I don't like this chat",
+  "monkaW the tension in this stream right now",
+  "monkaS guys did you hear that",
+  "monkaHmm chat are we safe",
+  "monkaW this is NOT okay",
+  "monkaS it's getting worse",
+  "monkaGIGA chat run",
+  "monkaS I'm scared chat monkaS",
+];
 
 // ── ?song — per-channel cooldown (30s) so it's not spammed ───────────────────
 const songCooldowns = {};  // { channelName: timestamp }

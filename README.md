@@ -25,6 +25,11 @@ All commands use the `?` prefix.
 | `?mock <user>` | Repeat a user's last message in SpOnGeBoB case |
 | `?story` | Generate a 3-sentence Markov story |
 | `?compliment <user>` | Send a Markov-generated compliment at someone |
+| `?forsen` | Post a random forsen-related one-liner |
+| `?copypasta` | Post a random classic Twitch copypasta |
+| `?monka` | Post a random monka emote + uneasy phrase |
+| `?iq <user>` | Check a user's IQ (consistent per username) |
+| `?clip` | Show the most recent clip from this channel |
 | `?lines` | Show current corpus line count |
 | `?followage <user>` | Show how long a user has been following this channel |
 | `?top` | Show the top 8 most common words in the corpus |
