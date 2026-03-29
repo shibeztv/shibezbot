@@ -63,6 +63,9 @@ function handle(channel, tags, message, ctx) {
 
   const ch = channel.replace(/^#/, "");
 
+  // ── Manual mode gate — only owner can use commands in manual channels ──────
+  if ((state.manualChannels || []).includes(ch) && !isOwner(tags)) return null;
+
   // ═══════════════════════════════════════════════════════════════════════════
   // ── OWNER BLOCK — shlbez has full access to everything, from any channel ──
   // ═══════════════════════════════════════════════════════════════════════════
