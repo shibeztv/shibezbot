@@ -853,8 +853,7 @@ function handle(channel, tags, message, ctx) {
         const data = await res.json();
         const entry = data?.list?.[0];
         if (!entry) return client.say(replyTo, `@${user} ⚠️ No definition found for "${term}".`).catch(() => {});
-        const def = entry.definition.replace(/[\[\]]/g, "").replace(/?
-/g, " ").trim();
+        const def = entry.definition.replace(/[\[\]]/g, "").replace(/\r?\n/g, " ").trim();
         const msg = `@${user} 📖 ${term}: ${def}`;
         client.say(replyTo, msg.slice(0, 490)).catch(() => {});
       } catch (e) {
