@@ -386,6 +386,9 @@ const userLastMessage = {};        // { username: "last message text" }
 const userMessages    = {};        // { username: ["msg1", "msg2", ...] } (capped at 150)
 const reminders       = {};        // { username: [{ from, text, when, channel }] }
 const sayCooldowns    = {};        // { username: timestamp } — last time user triggered ?say
+const watchtime       = {};        // { channelName: { username: seconds } }
+const recentViewers   = {};        // { channelName: { username: lastMsgTimestamp } }
+let   watchtimeTick   = null;      // interval handle
 const USER_MSG_CAP = 150;
 
 function learnMessage(username, message) {
@@ -411,6 +414,33 @@ setInterval(() => {
   newLines.length = 0;
 }, 60_000);
 
+// ── Watchtime tracker — ticks every 60s while stream is live ─────────────────
+const WATCHTIME_FILE = path.join(DATA_DIR, "watchtime.json");
+if (fs.existsSync(WATCHTIME_FILE)) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(WATCHTIME_FILE, "utf8"));
+    Object.assign(watchtime, raw);
+    console.log(`👁️  Watchtime data loaded.`);
+  } catch (e) { console.warn("⚠️  Could not load watchtime.json"); }
+}
+
+watchtimeTick = setInterval(() => {
+  const allChs = [...(state.postChannels || []), ...(state.manualChannels || [])];
+  for (const ch of allChs) {
+    if (!isChannelLive(ch)) continue;
+    if (!watchtime[ch]) watchtime[ch] = {};
+    // Give 60s to every user who sent a message in the last 5 minutes
+    const now = Date.now();
+    for (const [u, ts] of Object.entries(recentViewers[ch] || {})) {
+      if (now - ts < 5 * 60 * 1000) {
+        watchtime[ch][u] = (watchtime[ch][u] || 0) + 60;
+      }
+    }
+  }
+  // Save every tick
+  try { fs.writeFileSync(WATCHTIME_FILE, JSON.stringify(watchtime, null, 2), "utf8"); } catch (e) {}
+}, 60_000);
+
 // ── Command context ───────────────────────────────────────────────────────────
 
 const ctx = {
@@ -427,6 +457,7 @@ const ctx = {
   userMessages,
   reminders,
   sayCooldowns,
+  watchtime,
   addLearnChannel: (ch) => {
     if (!state.learnChannels.includes(ch)) state.learnChannels.push(ch);
   },
@@ -460,6 +491,12 @@ client.on("message", (channel, tags, message, self) => {
 
   if (state.postChannels.includes(ch) || state.learnChannels.includes(ch)) {
     if (isChannelLive(ch)) learnMessage(username, message);
+  }
+
+  // Track recent viewers for watchtime
+  if (state.postChannels.includes(ch) || state.manualChannels.includes(ch)) {
+    if (!recentViewers[ch]) recentViewers[ch] = {};
+    recentViewers[ch][username] = Date.now();
   }
 
   if (state.postChannels.includes(ch)) incrementCounter(ch);
@@ -536,6 +573,7 @@ client.connect().catch(err => {
 process.on("SIGINT", () => {
   console.log("\n🛑  Shutting down…");
   if (newLines.length > 0) fs.appendFileSync(LEARNED_FILE, newLines.join("\n") + "\n", "utf8");
+  try { fs.writeFileSync(WATCHTIME_FILE, JSON.stringify(watchtime, null, 2), "utf8"); } catch (e) {}
   saveState();
   client.disconnect();
   process.exit(0);

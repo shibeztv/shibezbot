@@ -73,7 +73,7 @@ function handle(channel, tags, message, ctx) {
       return (
         `👑 Owner (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | forsen | copypasta | monka | iq <u> | clip | ` +
+        `lines | followage <u> | top | status | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove | ` +
         `join | leave | manual | removeme | notify | ` +
         `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | unmanual | ` +
         `channels | users | adduser <u> | removeuser <u> | ` +
@@ -476,14 +476,14 @@ function handle(channel, tags, message, ctx) {
         `Commands (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
         `lines | followage <u> | top | status | notify live/offline/category on/off | ` +
-        `forsen | copypasta | monka | iq <u> | clip`
+        `forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove`
       );
     }
     if (isBroadcaster(tags)) {
       return (
         `📺 Broadcaster/Mod (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | ` +
+        `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove | ` +
         `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
         `join | leave | manual | unmanual | removeme | ` +
         `channels | users | adduser <u> | removeuser <u>`
@@ -492,7 +492,7 @@ function handle(channel, tags, message, ctx) {
     return (
       `🔧 Mod/VIP (${PREFIX}): ` +
       `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-      `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | ` +
+      `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove | ` +
       `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
       `join | leave | manual | unmanual | removeme | ` +
       `channels | users | adduser <u> | removeuser <u>`
@@ -812,6 +812,101 @@ function handle(channel, tags, message, ctx) {
         client.say(replyTo, `@${user} 🎬 Latest clip: "${clip.title}" by ${clip.creator_name} — ${clip.url}`).catch(() => {});
       } catch (err) {
         client.say(replyTo, `@${user} ⚠️ Clip lookup failed: ${err.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+  if (cmd === "commands") {
+    const user = (tags.username || "").toLowerCase();
+    return `@${user} Commands (${PREFIX}): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | lines | top | status | notify | howtoadd | howtoremove | help`;
+  }
+
+  if (cmd === "howtoadd") {
+    return `👋 Want to add the bot to your own channel? Just type ${PREFIX}join in @shlbez's channel!`;
+  }
+
+  if (cmd === "howtoremove") {
+    return `👋 Want to remove the bot from your channel? Just type ${PREFIX}leave in @shlbez's channel!`;
+  }
+
+  if (cmd === "watchtime") {
+    const target = (args[0] || tags.username || "").toLowerCase().replace(/^@/, "").trim();
+    const wt = (ctx.watchtime && ctx.watchtime[ch] && ctx.watchtime[ch][target]) || 0;
+    if (wt === 0) return `👁️ ${target} has no watchtime recorded yet in #${ch}.`;
+    const totalMins = Math.floor(wt / 60);
+    const hours = Math.floor(totalMins / 60);
+    const mins  = totalMins % 60;
+    const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+    return `👁️ ${target} has been watching #${ch} for ${timeStr}.`;
+  }
+
+  if (cmd === "urban") {
+    const term = args.join(" ").trim();
+    if (!term) return `⚠️ Usage: ${PREFIX}urban <word>`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        const res  = await fetch(`https://api.urbandictionary.com/v0/define?term=${encodeURIComponent(term)}`);
+        const data = await res.json();
+        const entry = data?.list?.[0];
+        if (!entry) return client.say(replyTo, `@${user} ⚠️ No definition found for "${term}".`).catch(() => {});
+        const def = entry.definition.replace(/[\[\]]/g, "").replace(/?
+/g, " ").trim();
+        const msg = `@${user} 📖 ${term}: ${def}`;
+        client.say(replyTo, msg.slice(0, 490)).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Urban Dictionary lookup failed.`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+  if (cmd === "translate") {
+    const text = args.join(" ").trim();
+    if (!text) return `⚠️ Usage: ${PREFIX}translate <text>`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=autodetect|en`;
+        const res  = await fetch(url);
+        const data = await res.json();
+        const translated = data?.responseData?.translatedText;
+        if (!translated || translated === text) return client.say(replyTo, `@${user} ⚠️ Couldn't translate that.`).catch(() => {});
+        client.say(replyTo, `@${user} 🌐 ${translated}`.slice(0, 490)).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Translation failed.`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+  if (cmd === "weather") {
+    const city = args.join(" ").trim();
+    if (!city) return `⚠️ Usage: ${PREFIX}weather <city>`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        const geoRes  = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`);
+        const geoData = await geoRes.json();
+        const loc = geoData?.results?.[0];
+        if (!loc) return client.say(replyTo, `@${user} ⚠️ City "${city}" not found.`).catch(() => {});
+        const { latitude, longitude, name, country } = loc;
+        const wxRes  = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&hourly=relativehumidity_2m&forecast_days=1`);
+        const wxData = await wxRes.json();
+        const wx = wxData?.current_weather;
+        if (!wx) return client.say(replyTo, `@${user} ⚠️ Couldn't fetch weather for ${name}.`).catch(() => {});
+        const humidity = wxData?.hourly?.relativehumidity_2m?.[0] ?? "?";
+        const desc = wx.weathercode <= 1 ? "☀️ Clear" : wx.weathercode <= 3 ? "⛅ Cloudy" : wx.weathercode <= 67 ? "🌧️ Rain" : wx.weathercode <= 77 ? "❄️ Snow" : "⛈️ Storm";
+        client.say(replyTo, `@${user} 🌍 ${name}, ${country}: ${desc} | 🌡️ ${wx.temperature}°C | 💨 ${wx.windspeed} km/h | 💧 ${humidity}% humidity`).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Weather lookup failed.`).catch(() => {});
       }
     });
     return null;

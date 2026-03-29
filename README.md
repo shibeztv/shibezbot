@@ -30,6 +30,13 @@ All commands use the `?` prefix.
 | `?monka` | Post a random monka emote + uneasy phrase |
 | `?iq <user>` | Check a user's IQ (consistent per username) |
 | `?clip` | Show the most recent clip from this channel |
+| `?urban <word>` | Look up a word on Urban Dictionary |
+| `?translate <text>` | Translate any text to English |
+| `?weather <city>` | Current weather for any city |
+| `?watchtime <user>` | How long a user has been watching this stream |
+| `?commands` | List all available command names |
+| `?howtoadd` | How to add the bot to your own channel |
+| `?howtoremove` | How to remove the bot from your channel |
 | `?lines` | Show current corpus line count |
 | `?followage <user>` | Show how long a user has been following this channel |
 | `?top` | Show the top 8 most common words in the corpus |
