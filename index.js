@@ -544,11 +544,16 @@ client.on("message", (channel, tags, message, self) => {
 
   // ── Owner ?say works from ANY channel the bot is in ─────────────────────
   if (commands.isOwner(tags) && message.trim().toLowerCase() === "?say") {
+    // Bypass online-only for manual owner ?say
+    const onlineOnly = !!(state.channelSettings[ch] && state.channelSettings[ch].onlineOnly);
+    if (onlineOnly) setChannelSetting(ch, "onlineOnly", false);
     const result = postNow(channel);
+    if (onlineOnly) setChannelSetting(ch, "onlineOnly", true);
     if (!result) {
-      client.say(channel,
-        `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`
-      ).catch(() => {});
+      const reason = markov.size < state.minCorpus
+        ? `Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data.`
+        : `Couldn't post — cooldown active or filter blocked all candidates.`;
+      client.say(channel, `⚠️ ${reason}`).catch(() => {});
     }
     return;
   }

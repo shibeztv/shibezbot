@@ -83,7 +83,7 @@ function handle(channel, tags, message, ctx) {
 
     if (cmd === "say") {
       const result = postNow(channel);
-      if (!result) return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`;
+      if (!result) return `⚠️ Could not post — stream may be offline (online-only mode) or corpus too small (${markov.size}/${state.minCorpus}).`;
       return null;
     }
 
@@ -515,7 +515,7 @@ function handle(channel, tags, message, ctx) {
       ctx.sayCooldowns[user] = Date.now();
     }
     const result = postNow(channel);
-    if (!result) return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`;
+    if (!result) return `⚠️ Could not post — stream may be offline (online-only mode) or corpus too small (${markov.size}/${state.minCorpus}).`;
     return null;
   }
 
