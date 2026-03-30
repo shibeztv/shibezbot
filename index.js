@@ -311,7 +311,13 @@ function restartTimer(ch) {
       return;
     }
     const ms = getChannelInterval(ch);
-    postTimers[ch] = setInterval(() => postNow(ch), ms);
+    postTimers[ch] = setInterval(() => {
+      if (state.channelSettings[ch] && state.channelSettings[ch].onlineOnly && !isChannelLive(ch)) {
+        console.log('[auto] #' + ch + ': online-only — offline, skipping auto-post.');
+        return;
+      }
+      postNow(ch);
+    }, ms);
     console.log(`⏱️   [#${ch}] Timer set to ${ms / 1000}s.`);
   } else {
     // Restart all channels
@@ -323,7 +329,13 @@ function restartTimer(ch) {
         continue;
       }
       const ms = getChannelInterval(c);
-      postTimers[c] = setInterval(() => postNow(c), ms);
+      postTimers[c] = setInterval(() => {
+        if (state.channelSettings[c] && state.channelSettings[c].onlineOnly && !isChannelLive(c)) {
+          console.log('[auto] #' + c + ': online-only — offline, skipping auto-post.');
+          return;
+        }
+        postNow(c);
+      }, ms);
       console.log(`⏱️   [#${c}] Timer set to ${ms / 1000}s.`);
     }
   }
@@ -334,12 +346,7 @@ function restartTimer(ch) {
 function postNow(channel) {
   const ch = channel.replace(/^#/, "");
   if (markov.size < state.minCorpus) return null;
-  // If online-only mode is enabled for this channel, skip posting when offline
-  const onlineOnly = state.channelSettings[ch] && state.channelSettings[ch].onlineOnly;
-  if (onlineOnly && !isChannelLive(ch)) {
-    console.log(`📴  [${ts()}] #${ch}: online-only mode — channel is offline, skipping.`);
-    return null;
-  }
+
   if (!cooldownReady(ch)) {
     const needed    = getChannelCooldown(ch);
     const remaining = needed - (msgCounters[ch] || 0);
@@ -544,16 +551,11 @@ client.on("message", (channel, tags, message, self) => {
 
   // ── Owner ?say works from ANY channel the bot is in ─────────────────────
   if (commands.isOwner(tags) && message.trim().toLowerCase() === "?say") {
-    // Bypass online-only for manual owner ?say
-    const onlineOnly = !!(state.channelSettings[ch] && state.channelSettings[ch].onlineOnly);
-    if (onlineOnly) setChannelSetting(ch, "onlineOnly", false);
     const result = postNow(channel);
-    if (onlineOnly) setChannelSetting(ch, "onlineOnly", true);
     if (!result) {
-      const reason = markov.size < state.minCorpus
-        ? `Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data.`
-        : `Couldn't post — cooldown active or filter blocked all candidates.`;
-      client.say(channel, `⚠️ ${reason}`).catch(() => {});
+      client.say(channel,
+        `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`
+      ).catch(() => {});
     }
     return;
   }

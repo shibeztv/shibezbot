@@ -83,7 +83,7 @@ function handle(channel, tags, message, ctx) {
 
     if (cmd === "say") {
       const result = postNow(channel);
-      if (!result) return `⚠️ Could not post — stream may be offline (online-only mode) or corpus too small (${markov.size}/${state.minCorpus}).`;
+      if (!result) return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`;
       return null;
     }
 
@@ -515,7 +515,7 @@ function handle(channel, tags, message, ctx) {
       ctx.sayCooldowns[user] = Date.now();
     }
     const result = postNow(channel);
-    if (!result) return `⚠️ Could not post — stream may be offline (online-only mode) or corpus too small (${markov.size}/${state.minCorpus}).`;
+    if (!result) return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`;
     return null;
   }
 
@@ -964,23 +964,42 @@ function handle(channel, tags, message, ctx) {
         }
         const html = await res.text();
 
-        // Extract ban count
-        const banCountMatch = html.match(/(\d+)\s*(?:times?|bans?)/i);
-        const banCount = banCountMatch ? banCountMatch[1] : null;
+        // Strip scripts/styles first
+        const stripped = html
+          .replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[\s\S]*?<\/style>/gi, '');
 
-        // Extract most recent ban entry — look for duration and reason patterns
-        const durationMatch = html.match(/(\d+\s*(?:day|hour|week|month|year|perm)[s]?)/i);
-        const reasonMatch   = html.match(/reason[:\s]+([^<\n]{5,80})/i);
+        // Extract all table data rows (skip header rows with <th>)
+        const rows = [...stripped.matchAll(/<tr[\s\S]*?<\/tr>/gi)]
+          .map(m => m[0])
+          .filter(row => /<td/i.test(row) && !/<th/i.test(row));
 
-        const duration = durationMatch ? durationMatch[1] : null;
-        const reason   = reasonMatch   ? reasonMatch[1].trim().slice(0, 60) : null;
+        const banCount = rows.length;
 
-        if (!banCount && !duration) {
+        // Pull text from cells of the first row
+        let duration = null;
+        let reason   = null;
+        if (rows.length > 0) {
+          const cells = [...rows[0].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)]
+            .map(m => m[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim())
+            .filter(Boolean);
+          // Duration cell looks like "30 days" / "1 month" / "permanent"
+          duration = cells.find(c => /^\d+\s*(day|hour|week|month|year)s?$|^perm/i.test(c)) || null;
+          // Reason: any cell that isn't a channel name, duration, or date (yyyy-mm-dd)
+          reason = cells.find(c =>
+            c.length > 4 &&
+            c !== duration &&
+            !/^\d{4}-\d{2}/.test(c) &&
+            !/^https?:/.test(c)
+          ) || null;
+          if (reason) reason = reason.slice(0, 60);
+        }
+
+        if (banCount === 0) {
           return client.say(replyTo, `@${user} ✅ ${target} — no bans found on streamerbans.com`).catch(() => {});
         }
 
-        const parts = [`🔨 ${target}`];
-        if (banCount) parts.push(`banned ${banCount}x`);
+        const parts = [`🔨 ${target}`, `banned ${banCount}x`];
         if (duration) parts.push(`last: ${duration}`);
         if (reason)   parts.push(`reason: ${reason}`);
         client.say(replyTo, parts.join(" | ").slice(0, 490)).catch(() => {});
