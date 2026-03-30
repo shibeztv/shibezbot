@@ -83,11 +83,16 @@ if (fs.existsSync(SEED_FILE)) {
 const DATA_DIR     = process.env.DATA_DIR || ".";
 const LEARNED_FILE = path.join(DATA_DIR, "learned_corpus.txt");
 
+const CORPUS_LOAD_LIMIT = 50_000;  // cap startup load to avoid OOM on low-RAM hosts
 if (fs.existsSync(LEARNED_FILE)) {
-  const lines = fs.readFileSync(LEARNED_FILE, "utf8")
+  let lines = fs.readFileSync(LEARNED_FILE, "utf8")
     .split("\n").map(l => l.trim()).filter(Boolean);
+  if (lines.length > CORPUS_LOAD_LIMIT) {
+    console.log(`✂️   Corpus has ${lines.length} lines — loading last ${CORPUS_LOAD_LIMIT} only.`);
+    lines = lines.slice(-CORPUS_LOAD_LIMIT);
+  }
   markov.trainBulk(lines);
-  console.log(`🧠  Learned corpus loaded: ${lines.length} extra lines | total: ${markov.size}`);
+  console.log(`🧠  Learned corpus loaded: ${lines.length} lines | total: ${markov.size}`);
 }
 
 // ── Live channel tracking ─────────────────────────────────────────────────────
@@ -412,6 +417,16 @@ setInterval(() => {
   fs.appendFileSync(LEARNED_FILE, newLines.join("\n") + "\n", "utf8");
   console.log(`💾  Saved ${newLines.length} new lines. Total corpus: ${markov.size}`);
   newLines.length = 0;
+  // Trim the file if it has grown too large to avoid OOM on next restart
+  const CORPUS_TRIM_AT   = 60_000;
+  const CORPUS_TRIM_TO   = 50_000;
+  try {
+    const allLines = fs.readFileSync(LEARNED_FILE, "utf8").split("\n").filter(Boolean);
+    if (allLines.length > CORPUS_TRIM_AT) {
+      fs.writeFileSync(LEARNED_FILE, allLines.slice(-CORPUS_TRIM_TO).join("\n") + "\n", "utf8");
+      console.log(`✂️   Corpus trimmed to ${CORPUS_TRIM_TO} lines (was ${allLines.length}).`);
+    }
+  } catch (e) { /* non-fatal */ }
 }, 60_000);
 
 // ── Watchtime tracker — ticks every 60s while stream is live ─────────────────

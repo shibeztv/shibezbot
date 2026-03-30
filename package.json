@@ -4,7 +4,7 @@
   "description": "Twitch Markov bot with commands, multi-channel learning, and persistent settings",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node --max-old-space-size=400 index.js"
   },
   "dependencies": {
     "tmi.js": "^1.8.5",
