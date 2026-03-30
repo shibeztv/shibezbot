@@ -73,7 +73,7 @@ function handle(channel, tags, message, ctx) {
       return (
         `👑 Owner (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | coinflip | bancheck <u> | botcheck <ch> | commands | howtoadd | howtoremove | ` +
+        `lines | followage <u> | top | status | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | bancheck <u> | commands | howtoadd | howtoremove | ` +
         `join | leave | manual | removeme | notify | ` +
         `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | unmanual | ` +
         `channels | users | adduser <u> | removeuser <u> | ` +
@@ -96,7 +96,88 @@ function handle(channel, tags, message, ctx) {
       return sentence;
     }
 
-    if (cmd === "remind") {
+    if (cmd === "bancheck") {
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}bancheck <username>`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    Promise.resolve().then(async () => {
+      try {
+        // betterbanned.com Next.js internal data endpoint
+        const res = await fetch(
+          `https://betterbanned.com/api/trpc/streamer.getStreamerByName?input=${encodeURIComponent(JSON.stringify({ json: target }))}`,
+          { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const streamer = data?.result?.data?.json;
+
+        if (!streamer) {
+          client.say(replyTo, `🔍 ${target} — not found on BetterBanned. They may not be tracked yet.`).catch(() => {});
+          return;
+        }
+
+        const totalBans  = streamer.totalBans ?? streamer.bans?.length ?? 0;
+        if (totalBans === 0) {
+          client.say(replyTo, `✅ ${target} — no bans on record.`).catch(() => {});
+          return;
+        }
+
+        // Most recent ban
+        const bans     = streamer.bans || [];
+        const lastBan  = bans[0];
+        const banDate  = lastBan?.bannedAt ? new Date(lastBan.bannedAt).toLocaleDateString("en-GB") : "unknown date";
+        const reason   = lastBan?.reason || "unknown reason";
+        const duration = lastBan?.duration || (lastBan?.unbannedAt ? "temporary" : "permanent");
+
+        client.say(replyTo,
+          `🔨 ${target} — Total bans: ${totalBans} | Last ban: ${banDate} | Reason: ${reason} | Duration: ${duration} | 🔗 betterbanned.com/en/streamer/${target}`
+        ).catch(() => {});
+      } catch (e) {
+        // Fallback: try scraping the HTML page
+        try {
+          const res2 = await fetch(`https://betterbanned.com/en/streamer/${target}`, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Accept": "text/html",
+            }
+          });
+          const html = await res2.text();
+
+          // Parse total bans
+          const totalMatch = html.match(/Total Twitch Bans[^:]*:\s*<[^>]*>(\d+)/i) ||
+                             html.match(/"totalBans":(\d+)/) ||
+                             html.match(/Total Twitch Bans.*?(\d+)/);
+          const total = totalMatch ? totalMatch[1] : "?";
+
+          // Parse most recent ban date
+          const banDateMatch = html.match(/Ban:\s*([\w]+ \d+,\s*\d{4})/i);
+          const banDate2 = banDateMatch ? banDateMatch[1] : "unknown";
+
+          // Parse reason
+          const reasonMatch = html.match(/Reason:\s*<[^>]*>([^<]+)/i);
+          const reason2 = reasonMatch ? reasonMatch[1].trim() : "unknown";
+
+          // Parse duration (e.g. "8 days")
+          const durationMatch = html.match(/(\d+\s+(?:day|days|hour|hours|month|months))/i);
+          const duration2 = durationMatch ? durationMatch[1] : "unknown";
+
+          if (total === "?" && !banDateMatch) {
+            client.say(replyTo, `🔍 ${target} — could not retrieve ban data. Check: betterbanned.com/en/streamer/${target}`).catch(() => {});
+          } else {
+            client.say(replyTo,
+              `🔨 ${target} — Total bans: ${total} | Last ban: ${banDate2} | Reason: ${reason2} | Duration: ${duration2} | 🔗 betterbanned.com/en/streamer/${target}`
+            ).catch(() => {});
+          }
+        } catch (e2) {
+          client.say(replyTo, `⚠️ Could not fetch ban data for ${target}: ${e2.message}`).catch(() => {});
+        }
+      }
+    });
+    return null;
+  }
+
+  if (cmd === "remind") {
       const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
       const text   = args.slice(1).join(" ").trim();
       if (!target || !text) return `⚠️ Usage: ${PREFIX}remind <user> <message>`;
@@ -372,23 +453,24 @@ function handle(channel, tags, message, ctx) {
     }
 
     if (cmd === "followage") {
-      const target = (args[0] || "").toLowerCase().trim();
-      if (!target) return `⚠️ Usage: ${PREFIX}followage <username>`;
+      const target    = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+      const lookupCh  = (args[1] || ch).toLowerCase().replace(/^#/, "").trim();
+      if (!target) return `⚠️ Usage: ${PREFIX}followage <username> [channel]`;
       if (!helixGet) return `⚠️ Twitch API not configured.`;
       Promise.resolve().then(async () => {
         const { client } = ctx;
         const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
         try {
           const [bcData, userData] = await Promise.all([
-            helixGet(`users?login=${encodeURIComponent(ch)}`),
+            helixGet(`users?login=${encodeURIComponent(lookupCh)}`),
             helixGet(`users?login=${encodeURIComponent(target)}`),
           ]);
           const broadcasterId = bcData.data?.[0]?.id;
           const userId        = userData.data?.[0]?.id;
-          if (!broadcasterId) return client.say(replyTo, `⚠️ Channel #${ch} not found on Twitch.`);
+          if (!broadcasterId) return client.say(replyTo, `⚠️ Channel #${lookupCh} not found on Twitch.`);
           if (!userId)        return client.say(replyTo, `⚠️ User ${target} not found on Twitch.`);
           const followData = await helixGet(`channels/followers?broadcaster_id=${broadcasterId}&user_id=${userId}`);
-          if (!followData.data?.length) return client.say(replyTo, `📊 ${target} is not following #${ch}.`);
+          if (!followData.data?.length) return client.say(replyTo, `📊 ${target} is not following #${lookupCh}.`);
           const followedAt = new Date(followData.data[0].followed_at);
           const diffMs = new Date() - followedAt;
           const days   = Math.floor(diffMs / 86_400_000);
@@ -399,12 +481,12 @@ function handle(channel, tags, message, ctx) {
           if (years)   parts.push(`${years} year${years   !== 1 ? "s" : ""}`);
           if (months)  parts.push(`${months} month${months !== 1 ? "s" : ""}`);
           if (remDays || parts.length === 0) parts.push(`${remDays} day${remDays !== 1 ? "s" : ""}`);
-          client.say(replyTo, `📅 ${target} has been following #${ch} for ${parts.join(", ")} (since ${followedAt.toLocaleDateString("en-GB")}).`);
+          client.say(replyTo, `📅 ${target} has been following #${lookupCh} for ${parts.join(", ")} (since ${followedAt.toLocaleDateString("en-GB")}).`);
         } catch (err) {
           client.say(replyTo, `⚠️ Followage lookup failed: ${err.message}`).catch(() => {});
         }
       });
-      return `🔍 Checking followage for ${target}...`;
+      return `🔍 Checking followage for ${target} in #${(args[1] || ch).replace(/^#/, "")}...`;
     }
 
     if (cmd === "top") {
@@ -475,7 +557,7 @@ function handle(channel, tags, message, ctx) {
       return (
         `Commands (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | notify live/offline/category on/off | roll <NdN> | choose <a> or <b> | coinflip | bancheck <u> | botcheck <ch> | ` +
+        `lines | followage <u> | top | status | notify live/offline/category on/off | ` +
         `forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove`
       );
     }
@@ -483,7 +565,7 @@ function handle(channel, tags, message, ctx) {
       return (
         `📺 Broadcaster/Mod (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | coinflip | bancheck <u> | botcheck <ch> | commands | howtoadd | howtoremove | ` +
+        `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove | ` +
         `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
         `join | leave | manual | unmanual | removeme | ` +
         `channels | users | adduser <u> | removeuser <u>`
@@ -492,7 +574,7 @@ function handle(channel, tags, message, ctx) {
     return (
       `🔧 Mod/VIP (${PREFIX}): ` +
       `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-      `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | coinflip | bancheck <u> | botcheck <ch> | commands | howtoadd | howtoremove | ` +
+      `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove | ` +
       `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
       `join | leave | manual | unmanual | removeme | ` +
       `channels | users | adduser <u> | removeuser <u>`
@@ -613,23 +695,24 @@ function handle(channel, tags, message, ctx) {
   }
 
   if (cmd === "followage") {
-    const target = (args[0] || "").toLowerCase().trim();
-    if (!target) return `⚠️ Usage: ${PREFIX}followage <username>`;
+    const target    = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    const lookupCh  = (args[1] || ch).toLowerCase().replace(/^#/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}followage <username> [channel]`;
     if (!helixGet) return `⚠️ Twitch API not configured (missing TWITCH_CLIENT_ID/SECRET).`;
     Promise.resolve().then(async () => {
       const { client } = ctx;
       const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
       try {
         const [bcData, userData] = await Promise.all([
-          helixGet(`users?login=${encodeURIComponent(ch)}`),
+          helixGet(`users?login=${encodeURIComponent(lookupCh)}`),
           helixGet(`users?login=${encodeURIComponent(target)}`),
         ]);
         const broadcasterId = bcData.data?.[0]?.id;
         const userId        = userData.data?.[0]?.id;
-        if (!broadcasterId) return client.say(replyTo, `⚠️ Channel #${ch} not found on Twitch.`);
+        if (!broadcasterId) return client.say(replyTo, `⚠️ Channel #${lookupCh} not found on Twitch.`);
         if (!userId)        return client.say(replyTo, `⚠️ User ${target} not found on Twitch.`);
         const followData = await helixGet(`channels/followers?broadcaster_id=${broadcasterId}&user_id=${userId}`);
-        if (!followData.data?.length) return client.say(replyTo, `📊 ${target} is not following #${ch}.`);
+        if (!followData.data?.length) return client.say(replyTo, `📊 ${target} is not following #${lookupCh}.`);
         const followedAt = new Date(followData.data[0].followed_at);
         const diffMs = new Date() - followedAt;
         const days   = Math.floor(diffMs / 86_400_000);
@@ -640,12 +723,12 @@ function handle(channel, tags, message, ctx) {
         if (years)   parts.push(`${years} year${years   !== 1 ? "s" : ""}`);
         if (months)  parts.push(`${months} month${months !== 1 ? "s" : ""}`);
         if (remDays || parts.length === 0) parts.push(`${remDays} day${remDays !== 1 ? "s" : ""}`);
-        client.say(replyTo, `📅 ${target} has been following #${ch} for ${parts.join(", ")} (since ${followedAt.toLocaleDateString("en-GB")}).`);
+        client.say(replyTo, `📅 ${target} has been following #${lookupCh} for ${parts.join(", ")} (since ${followedAt.toLocaleDateString("en-GB")}).`);
       } catch (err) {
         client.say(replyTo, `⚠️ Followage lookup failed: ${err.message}`).catch(() => {});
       }
     });
-    return `🔍 Checking followage for ${target}...`;
+    return `🔍 Checking followage for ${target} in #${(args[1] || ch).replace(/^#/, "")}...`;
   }
 
   if (cmd === "top") {
@@ -911,206 +994,6 @@ function handle(channel, tags, message, ctx) {
     return null;
   }
 
-
-  if (cmd === "roll") {
-    const input = (args[0] || "1d6").toLowerCase().trim();
-    // Accept both "2d6" and plain "20" (treated as 1d20)
-    let numDice, numSides;
-    const ndnMatch = input.match(/^(\d+)d(\d+)$/);
-    const plainMatch = input.match(/^(\d+)$/);
-    if (ndnMatch) {
-      numDice  = Math.min(parseInt(ndnMatch[1]), 20);
-      numSides = Math.min(parseInt(ndnMatch[2]), 1000);
-    } else if (plainMatch) {
-      numDice  = 1;
-      numSides = Math.min(parseInt(plainMatch[1]), 1000);
-    } else {
-      return `⚠️ Usage: ${PREFIX}roll <sides> or <NdN> — e.g. ?roll 20 or ?roll 2d6`;
-    }
-    if (numDice < 1 || numSides < 2) return `⚠️ Usage: ${PREFIX}roll <sides> or <NdN> — e.g. ?roll 20 or ?roll 2d6`;
-    const rolls = Array.from({ length: numDice }, () => Math.floor(Math.random() * numSides) + 1);
-    const total = rolls.reduce((a, b) => a + b, 0);
-    const rollStr = numDice > 1 ? ` (${rolls.join(" + ")})` : "";
-    const user = (tags.username || "").toLowerCase();
-    return `🎲 @${user} rolled ${numDice}d${numSides}: ${total}${rollStr}`;
-  }
-
-  if (cmd === "choose") {
-    const text = args.join(" ").trim();
-    if (!text) return `⚠️ Usage: ${PREFIX}choose <a> or <b>`;
-    const options = text.split(/\s+or\s+/i).map(s => s.trim()).filter(Boolean);
-    if (options.length < 2) return `⚠️ Usage: ${PREFIX}choose <a> or <b> — separate choices with "or"`;
-    const pick = options[Math.floor(Math.random() * options.length)];
-    const user = (tags.username || "").toLowerCase();
-    return `🤔 @${user} I choose: ${pick}`;
-  }
-
-  if (cmd === "bancheck") {
-    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
-    if (!target) return `⚠️ Usage: ${PREFIX}bancheck <username>`;
-    const { client } = ctx;
-    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
-    const user = (tags.username || "").toLowerCase();
-    Promise.resolve().then(async () => {
-      try {
-        const res = await fetch(`https://streamerbans.com/user/${encodeURIComponent(target)}`, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (compatible; TwitchMarkovBot/2.0)",
-            "Accept": "text/html",
-          },
-        });
-        if (!res.ok) {
-          return client.say(replyTo, `@${user} ⚠️ Could not fetch ban data for ${target} (HTTP ${res.status}).`).catch(() => {});
-        }
-        const html = await res.text();
-
-        // Strip scripts/styles first
-        const stripped = html
-          .replace(/<script[\s\S]*?<\/script>/gi, '')
-          .replace(/<style[\s\S]*?<\/style>/gi, '');
-
-        // Extract all table data rows (skip header rows with <th>)
-        const rows = [...stripped.matchAll(/<tr[\s\S]*?<\/tr>/gi)]
-          .map(m => m[0])
-          .filter(row => /<td/i.test(row) && !/<th/i.test(row));
-
-        const banCount = rows.length;
-
-        // Pull text from cells of the first row
-        let duration = null;
-        let reason   = null;
-        if (rows.length > 0) {
-          const cells = [...rows[0].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)]
-            .map(m => m[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim())
-            .filter(Boolean);
-          // Duration cell looks like "30 days" / "1 month" / "permanent"
-          duration = cells.find(c => /^\d+\s*(day|hour|week|month|year)s?$|^perm/i.test(c)) || null;
-          // Reason: any cell that isn't a channel name, duration, or date (yyyy-mm-dd)
-          reason = cells.find(c =>
-            c.length > 4 &&
-            c !== duration &&
-            !/^\d{4}-\d{2}/.test(c) &&
-            !/^https?:/.test(c)
-          ) || null;
-          if (reason) reason = reason.slice(0, 60);
-        }
-
-        if (banCount === 0) {
-          return client.say(replyTo, `@${user} ✅ ${target} — no bans found on streamerbans.com`).catch(() => {});
-        }
-
-        const parts = [`🔨 ${target}`, `banned ${banCount}x`];
-        if (duration) parts.push(`last: ${duration}`);
-        if (reason)   parts.push(`reason: ${reason}`);
-        client.say(replyTo, parts.join(" | ").slice(0, 490)).catch(() => {});
-      } catch (e) {
-        client.say(replyTo, `@${user} ⚠️ Ban check failed: ${e.message}`).catch(() => {});
-      }
-    });
-    return null;
-  }
-
-  if (cmd === "botcheck") {
-    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
-    if (!target) return `⚠️ Usage: ${PREFIX}botcheck <channel>`;
-    if (!helixGet) return `⚠️ Twitch API not configured (missing TWITCH_CLIENT_ID/SECRET).`;
-
-    const { client } = ctx;
-    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
-    const user = (tags.username || "").toLowerCase();
-
-    // Per-channel cooldown: 60s
-    if (!ctx.botcheckCooldowns) ctx.botcheckCooldowns = {};
-    const lastBc = ctx.botcheckCooldowns[target] || 0;
-    const bcRemaining = 60_000 - (Date.now() - lastBc);
-    if (bcRemaining > 0) {
-      return `@${user} ⏳ ?botcheck is on cooldown for ${Math.ceil(bcRemaining / 1000)}s.`;
-    }
-    ctx.botcheckCooldowns[target] = Date.now();
-
-    client.say(replyTo, `@${user} 🔍 Checking #${target} for bots, one sec...`).catch(() => {});
-
-    Promise.resolve().then(async () => {
-      try {
-        // ── Step 1: Check stream is live + get viewer count ────────────────
-        const streamData = await helixGet(`streams?user_login=${encodeURIComponent(target)}`);
-        const stream = streamData.data?.[0];
-        if (!stream) {
-          return client.say(replyTo, `@${user} ⚠️ #${target} is not live right now.`).catch(() => {});
-        }
-        const viewerCount = stream.viewer_count;
-
-        // ── Step 2: Get chatter list via TMI ──────────────────────────────
-        const tmiRes = await fetch(`https://tmi.twitch.tv/group/user/${encodeURIComponent(target)}/chatters`);
-        if (!tmiRes.ok) {
-          return client.say(replyTo, `@${user} ⚠️ Could not fetch chatter list for #${target}.`).catch(() => {});
-        }
-        const tmiData = await tmiRes.json();
-        const chatterCount = tmiData.chatter_count || 0;
-        const allChatters  = [
-          ...(tmiData.chatters?.broadcaster || []),
-          ...(tmiData.chatters?.vips        || []),
-          ...(tmiData.chatters?.moderators  || []),
-          ...(tmiData.chatters?.staff       || []),
-          ...(tmiData.chatters?.viewers     || []),
-        ];
-
-        if (allChatters.length === 0) {
-          return client.say(replyTo, `@${user} ⚠️ No chatters found in #${target}.`).catch(() => {});
-        }
-
-        // ── Step 3: Sample up to 100 chatters ─────────────────────────────
-        const shuffled = allChatters.sort(() => Math.random() - 0.5);
-        const sample   = shuffled.slice(0, 100);
-
-        // ── Step 4: Batch-check account creation dates ────────────────────
-        const loginParams = sample.map(u => `login=${encodeURIComponent(u)}`).join("&");
-        const usersData   = await helixGet(`users?${loginParams}`);
-        const users       = usersData.data || [];
-
-        const BOT_CUTOFF = new Date("2022-01-01").getTime();
-        let newAccounts = 0;
-        for (const u of users) {
-          const created = new Date(u.created_at).getTime();
-          if (created >= BOT_CUTOFF) newAccounts++;
-        }
-
-        const sampledCount  = users.length;
-        const newPct        = sampledCount > 0 ? Math.round((newAccounts / sampledCount) * 100) : 0;
-        const viewerRatio   = chatterCount > 0 ? Math.round(viewerCount / chatterCount) : 9999;
-
-        // ── Step 5: Verdict ───────────────────────────────────────────────
-        let verdict;
-        if (newPct >= 70 || viewerRatio >= 100) {
-          verdict = "🚨 LIKELY BOTTED";
-        } else if (newPct >= 45 || viewerRatio >= 40) {
-          verdict = "⚠️ Suspicious";
-        } else {
-          verdict = "✅ Looks clean";
-        }
-
-        const msg = (
-          `🤖 #${target}: ${viewerCount.toLocaleString()} viewers | ` +
-          `${chatterCount.toLocaleString()} chatters | ` +
-          `ratio ${viewerRatio}:1 | ` +
-          `sampled ${sampledCount} accounts: ${newPct}% post-2022 | ` +
-          `${verdict}`
-        );
-        client.say(replyTo, `@${user} ${msg}`.slice(0, 490)).catch(() => {});
-
-      } catch (e) {
-        client.say(replyTo, `@${user} ⚠️ Botcheck failed: ${e.message}`).catch(() => {});
-      }
-    });
-    return null;
-  }
-
-  if (cmd === "coinflip") {
-    const user = (tags.username || "").toLowerCase();
-    const result = Math.random() < 0.5 ? "🪙 Heads!" : "🪙 Tails!";
-    return `@${user} ${result}`;
-  }
-
   // ═══════════════════════════════════════════════════════════════════════════
   // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1138,25 +1021,6 @@ function handle(channel, tags, message, ctx) {
     state.allowedUsers.push(user);
     saveState();
     return `✅ ${user} can now use bot commands.`;
-  }
-
-  if (cmd === "removeuser") {
-    const user = (args[0] || "").toLowerCase().trim();
-    if (!user) return `⚠️ Usage: ${PREFIX}removeuser <username>`;
-    if (!state.allowedUsers) return `${user} doesn't have access.`;
-    const idx = state.allowedUsers.indexOf(user);
-    if (idx === -1) return `${user} doesn't have access.`;
-    state.allowedUsers.splice(idx, 1);
-    saveState();
-    return `🚫 Removed ${user}'s access.`;
-  }
-
-  if (cmd === "minlines") {
-    const n = parseInt(args[0]);
-    if (isNaN(n) || n < 1) return `⚠️ Usage: ${PREFIX}minlines <number>`;
-    state.minCorpus = n;
-    saveState();
-    return `📚 Minimum lines set to ${n} (current: ${markov.size}).`;
   }
 
   if (cmd === "start") {
