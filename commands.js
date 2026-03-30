@@ -970,8 +970,7 @@ function handle(channel, tags, message, ctx) {
 
         // Extract most recent ban entry — look for duration and reason patterns
         const durationMatch = html.match(/(\d+\s*(?:day|hour|week|month|year|perm)[s]?)/i);
-        const reasonMatch   = html.match(/reason[:\s]+([^<
-]{5,80})/i);
+        const reasonMatch   = html.match(/reason[:\s]+([^<\n]{5,80})/i);
 
         const duration = durationMatch ? durationMatch[1] : null;
         const reason   = reasonMatch   ? reasonMatch[1].trim().slice(0, 60) : null;
@@ -1087,6 +1086,12 @@ function handle(channel, tags, message, ctx) {
     return null;
   }
 
+  if (cmd === "coinflip") {
+    const user = (tags.username || "").toLowerCase();
+    const result = Math.random() < 0.5 ? "🪙 Heads!" : "🪙 Tails!";
+    return `@${user} ${result}`;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1114,6 +1119,25 @@ function handle(channel, tags, message, ctx) {
     state.allowedUsers.push(user);
     saveState();
     return `✅ ${user} can now use bot commands.`;
+  }
+
+  if (cmd === "removeuser") {
+    const user = (args[0] || "").toLowerCase().trim();
+    if (!user) return `⚠️ Usage: ${PREFIX}removeuser <username>`;
+    if (!state.allowedUsers) return `${user} doesn't have access.`;
+    const idx = state.allowedUsers.indexOf(user);
+    if (idx === -1) return `${user} doesn't have access.`;
+    state.allowedUsers.splice(idx, 1);
+    saveState();
+    return `🚫 Removed ${user}'s access.`;
+  }
+
+  if (cmd === "minlines") {
+    const n = parseInt(args[0]);
+    if (isNaN(n) || n < 1) return `⚠️ Usage: ${PREFIX}minlines <number>`;
+    state.minCorpus = n;
+    saveState();
+    return `📚 Minimum lines set to ${n} (current: ${markov.size}).`;
   }
 
   if (cmd === "start") {

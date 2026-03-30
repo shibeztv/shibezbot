@@ -182,10 +182,10 @@ twitch-markov-bot/
 | `BOT_USERNAME` | ✅ | Bot's Twitch username |
 | `OAUTH_TOKEN` | ✅ | `oauth:xxxxx` from twitchtokengenerator.com |
 | `CHANNEL` | ✅ | Your channel name (no #) |
-| `TWITCH_CLIENT_ID` | Optional | Enables `?followage`, live notifications, online-only mode |
-| `TWITCH_CLIENT_SECRET` | Optional | Same as above |
-| `GEMINI_API_KEY` | Optional | Enables `?gpt` — free key at aistudio.google.com/apikey |
-| `AUDD_API_KEY` | Optional | Enables `?song` — free key at shazam-api.com) |
+| `TWITCH_CLIENT_ID` | Optional | Enables `?followage`, `?clip`, `?botcheck`, live notifications, online-only mode |
+| `TWITCH_CLIENT_SECRET` | Optional | Same as above — create an app at dev.twitch.tv/console/apps |
+| `GROQ_API_KEY` | Optional | Enables `?gpt` — free key at console.groq.com |
+| `RAPIDAPI_KEY` | Optional | Enables `?song` (Shazam) — free key at rapidapi.com/apidojo/api/shazam |
 
 ---
 
@@ -193,6 +193,7 @@ twitch-markov-bot/
 
 - `?addlearn` on a popular channel with similar chat culture is great for bulk-learning vocabulary fast.
 - Set `?minlines 200` for noticeably better sentence quality.
+- Use `?stop` to silence the bot during a stream moment, then `?start` to resume.
 - The bot ignores its own messages and common bot accounts automatically.
 
 ---
