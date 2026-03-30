@@ -185,7 +185,7 @@ twitch-markov-bot/
 | `TWITCH_CLIENT_ID` | Optional | Enables `?followage`, live notifications, online-only mode |
 | `TWITCH_CLIENT_SECRET` | Optional | Same as above |
 | `GEMINI_API_KEY` | Optional | Enables `?gpt` — free key at aistudio.google.com/apikey |
-| `AUDD_API_KEY` | Optional | Enables `?song` — free key at dashboard.audd.io (300/day free) |
+| `AUDD_API_KEY` | Optional | Enables `?song` — free key at shazam-api.com) |
 
 ---
 
@@ -193,7 +193,6 @@ twitch-markov-bot/
 
 - `?addlearn` on a popular channel with similar chat culture is great for bulk-learning vocabulary fast.
 - Set `?minlines 200` for noticeably better sentence quality.
-- Use `?stop` to silence the bot during a stream moment, then `?start` to resume.
 - The bot ignores its own messages and common bot accounts automatically.
 
 ---
