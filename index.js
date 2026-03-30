@@ -458,6 +458,7 @@ const ctx = {
   reminders,
   sayCooldowns,
   watchtime,
+  botcheckCooldowns: {},
   addLearnChannel: (ch) => {
     if (!state.learnChannels.includes(ch)) state.learnChannels.push(ch);
   },

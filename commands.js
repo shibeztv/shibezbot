@@ -73,7 +73,7 @@ function handle(channel, tags, message, ctx) {
       return (
         `👑 Owner (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove | ` +
+        `lines | followage <u> | top | status | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | coinflip | bancheck <u> | botcheck <ch> | commands | howtoadd | howtoremove | ` +
         `join | leave | manual | removeme | notify | ` +
         `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | unmanual | ` +
         `channels | users | adduser <u> | removeuser <u> | ` +
@@ -475,7 +475,7 @@ function handle(channel, tags, message, ctx) {
       return (
         `Commands (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | notify live/offline/category on/off | roll <NdN> | choose <a> or <b> | bancheck <u> | ` +
+        `lines | followage <u> | top | status | notify live/offline/category on/off | roll <NdN> | choose <a> or <b> | coinflip | bancheck <u> | botcheck <ch> | ` +
         `forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove`
       );
     }
@@ -483,7 +483,7 @@ function handle(channel, tags, message, ctx) {
       return (
         `📺 Broadcaster/Mod (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove | ` +
+        `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | coinflip | bancheck <u> | botcheck <ch> | commands | howtoadd | howtoremove | ` +
         `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
         `join | leave | manual | unmanual | removeme | ` +
         `channels | users | adduser <u> | removeuser <u>`
@@ -492,7 +492,7 @@ function handle(channel, tags, message, ctx) {
     return (
       `🔧 Mod/VIP (${PREFIX}): ` +
       `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-      `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove | ` +
+      `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | coinflip | bancheck <u> | botcheck <ch> | commands | howtoadd | howtoremove | ` +
       `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
       `join | leave | manual | unmanual | removeme | ` +
       `channels | users | adduser <u> | removeuser <u>`
@@ -987,6 +987,101 @@ function handle(channel, tags, message, ctx) {
         client.say(replyTo, parts.join(" | ").slice(0, 490)).catch(() => {});
       } catch (e) {
         client.say(replyTo, `@${user} ⚠️ Ban check failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+  if (cmd === "botcheck") {
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}botcheck <channel>`;
+    if (!helixGet) return `⚠️ Twitch API not configured (missing TWITCH_CLIENT_ID/SECRET).`;
+
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+
+    // Per-channel cooldown: 60s
+    if (!ctx.botcheckCooldowns) ctx.botcheckCooldowns = {};
+    const lastBc = ctx.botcheckCooldowns[target] || 0;
+    const bcRemaining = 60_000 - (Date.now() - lastBc);
+    if (bcRemaining > 0) {
+      return `@${user} ⏳ ?botcheck is on cooldown for ${Math.ceil(bcRemaining / 1000)}s.`;
+    }
+    ctx.botcheckCooldowns[target] = Date.now();
+
+    client.say(replyTo, `@${user} 🔍 Checking #${target} for bots, one sec...`).catch(() => {});
+
+    Promise.resolve().then(async () => {
+      try {
+        // ── Step 1: Check stream is live + get viewer count ────────────────
+        const streamData = await helixGet(`streams?user_login=${encodeURIComponent(target)}`);
+        const stream = streamData.data?.[0];
+        if (!stream) {
+          return client.say(replyTo, `@${user} ⚠️ #${target} is not live right now.`).catch(() => {});
+        }
+        const viewerCount = stream.viewer_count;
+
+        // ── Step 2: Get chatter list via TMI ──────────────────────────────
+        const tmiRes = await fetch(`https://tmi.twitch.tv/group/user/${encodeURIComponent(target)}/chatters`);
+        if (!tmiRes.ok) {
+          return client.say(replyTo, `@${user} ⚠️ Could not fetch chatter list for #${target}.`).catch(() => {});
+        }
+        const tmiData = await tmiRes.json();
+        const chatterCount = tmiData.chatter_count || 0;
+        const allChatters  = [
+          ...(tmiData.chatters?.broadcaster || []),
+          ...(tmiData.chatters?.vips        || []),
+          ...(tmiData.chatters?.moderators  || []),
+          ...(tmiData.chatters?.staff       || []),
+          ...(tmiData.chatters?.viewers     || []),
+        ];
+
+        if (allChatters.length === 0) {
+          return client.say(replyTo, `@${user} ⚠️ No chatters found in #${target}.`).catch(() => {});
+        }
+
+        // ── Step 3: Sample up to 100 chatters ─────────────────────────────
+        const shuffled = allChatters.sort(() => Math.random() - 0.5);
+        const sample   = shuffled.slice(0, 100);
+
+        // ── Step 4: Batch-check account creation dates ────────────────────
+        const loginParams = sample.map(u => `login=${encodeURIComponent(u)}`).join("&");
+        const usersData   = await helixGet(`users?${loginParams}`);
+        const users       = usersData.data || [];
+
+        const BOT_CUTOFF = new Date("2022-01-01").getTime();
+        let newAccounts = 0;
+        for (const u of users) {
+          const created = new Date(u.created_at).getTime();
+          if (created >= BOT_CUTOFF) newAccounts++;
+        }
+
+        const sampledCount  = users.length;
+        const newPct        = sampledCount > 0 ? Math.round((newAccounts / sampledCount) * 100) : 0;
+        const viewerRatio   = chatterCount > 0 ? Math.round(viewerCount / chatterCount) : 9999;
+
+        // ── Step 5: Verdict ───────────────────────────────────────────────
+        let verdict;
+        if (newPct >= 70 || viewerRatio >= 100) {
+          verdict = "🚨 LIKELY BOTTED";
+        } else if (newPct >= 45 || viewerRatio >= 40) {
+          verdict = "⚠️ Suspicious";
+        } else {
+          verdict = "✅ Looks clean";
+        }
+
+        const msg = (
+          `🤖 #${target}: ${viewerCount.toLocaleString()} viewers | ` +
+          `${chatterCount.toLocaleString()} chatters | ` +
+          `ratio ${viewerRatio}:1 | ` +
+          `sampled ${sampledCount} accounts: ${newPct}% post-2022 | ` +
+          `${verdict}`
+        );
+        client.say(replyTo, `@${user} ${msg}`.slice(0, 490)).catch(() => {});
+
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Botcheck failed: ${e.message}`).catch(() => {});
       }
     });
     return null;

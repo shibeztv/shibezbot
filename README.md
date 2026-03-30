@@ -45,6 +45,7 @@ All commands use the `?` prefix.
 | `?roll <sides>` | Roll a die — e.g. `?roll 20` rolls 1d20, `?roll 2d6` rolls two 6-sided dice |
 | `?choose <a> or <b>` | Bot picks one option randomly from a list separated by "or" |
 | `?bancheck <user>` | Look up a user's ban history on streamerbans.com |
+| `?botcheck <channel>` | Check if a live channel is using viewbots (account age analysis) |
 | `?notify live on/off` | Subscribe/unsubscribe to go-live pings |
 | `?notify offline on/off` | Subscribe/unsubscribe to offline pings |
 | `?notify category on/off` | Subscribe/unsubscribe to game/category change pings |
@@ -118,6 +119,8 @@ Everything above, plus cross-channel control:
 ?roll 2d6                 → 🎲 @shlbez rolled 2d6: 9 (4 + 5)
 ?choose forsen or xqc or shroud → 🤔 @shlbez I choose: xqc
 ?bancheck xqc             → 🔨 xqc | banned 3x | last: 14 days | reason: hateful conduct
+?botcheck suspiciousguy   → 🤖 #suspiciousguy: 1,840 viewers | 6 chatters | ratio 307:1 | sampled 6 accounts: 83% post-2022 | 🚨 LIKELY BOTTED
+?botcheck xqc             → 🤖 #xqc: 45,231 viewers | 3,821 chatters | ratio 12:1 | sampled 100 accounts: 21% post-2022 | ✅ Looks clean
 ?join xqc                 → also post in xQc's chat (owner only)
 ?addlearn hasanabi        → learn from hasanabi's chat silently (owner only)
 ```
