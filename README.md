@@ -42,6 +42,9 @@ All commands use the `?` prefix.
 | `?top` | Show the top 8 most common words in the corpus |
 | `?status` | Show the bot's current status in this channel |
 | `?remind <user> <message>` | Remind someone the next time they type in chat |
+| `?roll <sides>` | Roll a die — e.g. `?roll 20` rolls 1d20, `?roll 2d6` rolls two 6-sided dice |
+| `?choose <a> or <b>` | Bot picks one option randomly from a list separated by "or" |
+| `?bancheck <user>` | Look up a user's ban history on streamerbans.com |
 | `?notify live on/off` | Subscribe/unsubscribe to go-live pings |
 | `?notify offline on/off` | Subscribe/unsubscribe to offline pings |
 | `?notify category on/off` | Subscribe/unsubscribe to game/category change pings |
@@ -111,6 +114,10 @@ Everything above, plus cross-channel control:
 ?minlines 200             → don't post until 200+ lines learned
 ?onlineonly               → toggle online-only posting mode
 ?notify live on           → get pinged when this channel goes live
+?roll 20                  → 🎲 @shlbez rolled 1d20: 17
+?roll 2d6                 → 🎲 @shlbez rolled 2d6: 9 (4 + 5)
+?choose forsen or xqc or shroud → 🤔 @shlbez I choose: xqc
+?bancheck xqc             → 🔨 xqc | banned 3x | last: 14 days | reason: hateful conduct
 ?join xqc                 → also post in xQc's chat (owner only)
 ?addlearn hasanabi        → learn from hasanabi's chat silently (owner only)
 ```

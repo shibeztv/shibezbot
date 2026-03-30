@@ -475,7 +475,7 @@ function handle(channel, tags, message, ctx) {
       return (
         `Commands (${PREFIX}): ` +
         `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | notify live/offline/category on/off | ` +
+        `lines | followage <u> | top | status | notify live/offline/category on/off | roll <NdN> | choose <a> or <b> | bancheck <u> | ` +
         `forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove`
       );
     }
@@ -906,6 +906,87 @@ function handle(channel, tags, message, ctx) {
         client.say(replyTo, `@${user} 🌍 ${name}, ${country}: ${desc} | 🌡️ ${wx.temperature}°C | 💨 ${wx.windspeed} km/h | 💧 ${humidity}% humidity`).catch(() => {});
       } catch (e) {
         client.say(replyTo, `@${user} ⚠️ Weather lookup failed.`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+
+  if (cmd === "roll") {
+    const input = (args[0] || "1d6").toLowerCase().trim();
+    // Accept both "2d6" and plain "20" (treated as 1d20)
+    let numDice, numSides;
+    const ndnMatch = input.match(/^(\d+)d(\d+)$/);
+    const plainMatch = input.match(/^(\d+)$/);
+    if (ndnMatch) {
+      numDice  = Math.min(parseInt(ndnMatch[1]), 20);
+      numSides = Math.min(parseInt(ndnMatch[2]), 1000);
+    } else if (plainMatch) {
+      numDice  = 1;
+      numSides = Math.min(parseInt(plainMatch[1]), 1000);
+    } else {
+      return `⚠️ Usage: ${PREFIX}roll <sides> or <NdN> — e.g. ?roll 20 or ?roll 2d6`;
+    }
+    if (numDice < 1 || numSides < 2) return `⚠️ Usage: ${PREFIX}roll <sides> or <NdN> — e.g. ?roll 20 or ?roll 2d6`;
+    const rolls = Array.from({ length: numDice }, () => Math.floor(Math.random() * numSides) + 1);
+    const total = rolls.reduce((a, b) => a + b, 0);
+    const rollStr = numDice > 1 ? ` (${rolls.join(" + ")})` : "";
+    const user = (tags.username || "").toLowerCase();
+    return `🎲 @${user} rolled ${numDice}d${numSides}: ${total}${rollStr}`;
+  }
+
+  if (cmd === "choose") {
+    const text = args.join(" ").trim();
+    if (!text) return `⚠️ Usage: ${PREFIX}choose <a> or <b>`;
+    const options = text.split(/\s+or\s+/i).map(s => s.trim()).filter(Boolean);
+    if (options.length < 2) return `⚠️ Usage: ${PREFIX}choose <a> or <b> — separate choices with "or"`;
+    const pick = options[Math.floor(Math.random() * options.length)];
+    const user = (tags.username || "").toLowerCase();
+    return `🤔 @${user} I choose: ${pick}`;
+  }
+
+  if (cmd === "bancheck") {
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}bancheck <username>`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        const res = await fetch(`https://streamerbans.com/user/${encodeURIComponent(target)}`, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; TwitchMarkovBot/2.0)",
+            "Accept": "text/html",
+          },
+        });
+        if (!res.ok) {
+          return client.say(replyTo, `@${user} ⚠️ Could not fetch ban data for ${target} (HTTP ${res.status}).`).catch(() => {});
+        }
+        const html = await res.text();
+
+        // Extract ban count
+        const banCountMatch = html.match(/(\d+)\s*(?:times?|bans?)/i);
+        const banCount = banCountMatch ? banCountMatch[1] : null;
+
+        // Extract most recent ban entry — look for duration and reason patterns
+        const durationMatch = html.match(/(\d+\s*(?:day|hour|week|month|year|perm)[s]?)/i);
+        const reasonMatch   = html.match(/reason[:\s]+([^<
+]{5,80})/i);
+
+        const duration = durationMatch ? durationMatch[1] : null;
+        const reason   = reasonMatch   ? reasonMatch[1].trim().slice(0, 60) : null;
+
+        if (!banCount && !duration) {
+          return client.say(replyTo, `@${user} ✅ ${target} — no bans found on streamerbans.com`).catch(() => {});
+        }
+
+        const parts = [`🔨 ${target}`];
+        if (banCount) parts.push(`banned ${banCount}x`);
+        if (duration) parts.push(`last: ${duration}`);
+        if (reason)   parts.push(`reason: ${reason}`);
+        client.say(replyTo, parts.join(" | ").slice(0, 490)).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Ban check failed: ${e.message}`).catch(() => {});
       }
     });
     return null;
