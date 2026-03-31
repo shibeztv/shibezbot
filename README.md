@@ -1,7 +1,7 @@
-# 🤖 Twitch Markov Bot v2
+# 🤖 Twitch Bot (Shibez_bot)
 
 A Twitch bot that blends in as a viewer by posting Markov-generated chat messages,
-with a full live command system controllable from Twitch chat.
+with a full live command system and fun other features!
 
 ---
 
