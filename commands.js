@@ -2,9 +2,9 @@
  * commands.js — All bot commands
  *
  * Auth tiers:
- *   1. OWNER ("shlbez") — separate block at the top, all commands, no restrictions
- *   2. Everyone else   — public commands open to all, elevated commands gated to
- *                        mods / VIPs / allowedUsers / broadcaster
+ *   1. OWNER ("shlbez") — full access to everything from any channel
+ *   2. Mods / VIPs / Broadcaster — elevated commands (start/stop/interval etc.)
+ *   3. Everyone — all public commands
  */
 
 const PREFIX   = "?";
@@ -15,11 +15,6 @@ const song = require("./song");
 
 function isOwner(tags) {
   return (tags.username || "").toLowerCase() === OWNER;
-}
-
-function isAllowedUser(tags, state) {
-  const user = (tags.username || "").toLowerCase();
-  return (state.allowedUsers || []).includes(user);
 }
 
 function isModOrVip(tags) {
@@ -33,11 +28,7 @@ function isBroadcaster(tags) {
 }
 
 function hasAnyAccess(tags, state) {
-  return isOwner(tags) || isAllowedUser(tags, state) || isModOrVip(tags) || isBroadcaster(tags);
-}
-
-function hasLimitedAccess(tags, state) {
-  return isOwner(tags) || isAllowedUser(tags, state) || isModOrVip(tags);
+  return isOwner(tags) || isModOrVip(tags) || isBroadcaster(tags);
 }
 
 function parseCommand(message) {
@@ -64,20 +55,20 @@ function handle(channel, tags, message, ctx) {
   const ch = channel.replace(/^#/, "");
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // ── OWNER BLOCK — shlbez has full access to everything, from any channel ──
+  // ── OWNER BLOCK — shlbez only, all commands, any channel ─────────────────
   // ═══════════════════════════════════════════════════════════════════════════
 
   if (isOwner(tags)) {
 
     if (cmd === "help") {
       return (
-        `👑 Owner (${PREFIX}): ` +
-        `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | bancheck <u> | commands | howtoadd | howtoremove | ` +
-        `join | leave | manual | removeme | notify | ` +
-        `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | unmanual | ` +
-        `channels | users | adduser <u> | removeuser <u> | ` +
-        `join <ch> | leave <ch> | manual <ch> | unmanual <ch> | addlearn <ch> | removelearn <ch>`
+        `👑 Owner (?): ` +
+        `say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | ` +
+        `forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | ` +
+        `roll | choose | coinflip | bancheck | botcheck | lines | followage | top | status | commands | ` +
+        `notify | start | stop | interval | cooldown | minlines | onlineonly | greeter | ` +
+        `join | leave | manual | unmanual | addlearn | removelearn | adduser | removeuser | users | ` +
+        `channels | removeme`
       );
     }
 
@@ -96,88 +87,7 @@ function handle(channel, tags, message, ctx) {
       return sentence;
     }
 
-    if (cmd === "bancheck") {
-    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
-    if (!target) return `⚠️ Usage: ${PREFIX}bancheck <username>`;
-    const { client } = ctx;
-    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
-    Promise.resolve().then(async () => {
-      try {
-        // betterbanned.com Next.js internal data endpoint
-        const res = await fetch(
-          `https://betterbanned.com/api/trpc/streamer.getStreamerByName?input=${encodeURIComponent(JSON.stringify({ json: target }))}`,
-          { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } }
-        );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const streamer = data?.result?.data?.json;
-
-        if (!streamer) {
-          client.say(replyTo, `🔍 ${target} — not found on BetterBanned. They may not be tracked yet.`).catch(() => {});
-          return;
-        }
-
-        const totalBans  = streamer.totalBans ?? streamer.bans?.length ?? 0;
-        if (totalBans === 0) {
-          client.say(replyTo, `✅ ${target} — no bans on record.`).catch(() => {});
-          return;
-        }
-
-        // Most recent ban
-        const bans     = streamer.bans || [];
-        const lastBan  = bans[0];
-        const banDate  = lastBan?.bannedAt ? new Date(lastBan.bannedAt).toLocaleDateString("en-GB") : "unknown date";
-        const reason   = lastBan?.reason || "unknown reason";
-        const duration = lastBan?.duration || (lastBan?.unbannedAt ? "temporary" : "permanent");
-
-        client.say(replyTo,
-          `🔨 ${target} — Total bans: ${totalBans} | Last ban: ${banDate} | Reason: ${reason} | Duration: ${duration} | 🔗 betterbanned.com/en/streamer/${target}`
-        ).catch(() => {});
-      } catch (e) {
-        // Fallback: try scraping the HTML page
-        try {
-          const res2 = await fetch(`https://betterbanned.com/en/streamer/${target}`, {
-            headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-              "Accept": "text/html",
-            }
-          });
-          const html = await res2.text();
-
-          // Parse total bans
-          const totalMatch = html.match(/Total Twitch Bans[^:]*:\s*<[^>]*>(\d+)/i) ||
-                             html.match(/"totalBans":(\d+)/) ||
-                             html.match(/Total Twitch Bans.*?(\d+)/);
-          const total = totalMatch ? totalMatch[1] : "?";
-
-          // Parse most recent ban date
-          const banDateMatch = html.match(/Ban:\s*([\w]+ \d+,\s*\d{4})/i);
-          const banDate2 = banDateMatch ? banDateMatch[1] : "unknown";
-
-          // Parse reason
-          const reasonMatch = html.match(/Reason:\s*<[^>]*>([^<]+)/i);
-          const reason2 = reasonMatch ? reasonMatch[1].trim() : "unknown";
-
-          // Parse duration (e.g. "8 days")
-          const durationMatch = html.match(/(\d+\s+(?:day|days|hour|hours|month|months))/i);
-          const duration2 = durationMatch ? durationMatch[1] : "unknown";
-
-          if (total === "?" && !banDateMatch) {
-            client.say(replyTo, `🔍 ${target} — could not retrieve ban data. Check: betterbanned.com/en/streamer/${target}`).catch(() => {});
-          } else {
-            client.say(replyTo,
-              `🔨 ${target} — Total bans: ${total} | Last ban: ${banDate2} | Reason: ${reason2} | Duration: ${duration2} | 🔗 betterbanned.com/en/streamer/${target}`
-            ).catch(() => {});
-          }
-        } catch (e2) {
-          client.say(replyTo, `⚠️ Could not fetch ban data for ${target}: ${e2.message}`).catch(() => {});
-        }
-      }
-    });
-    return null;
-  }
-
-  if (cmd === "remind") {
+    if (cmd === "remind") {
       const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
       const text   = args.slice(1).join(" ").trim();
       if (!target || !text) return `⚠️ Usage: ${PREFIX}remind <user> <message>`;
@@ -189,25 +99,22 @@ function handle(channel, tags, message, ctx) {
 
     if (cmd === "dadjoke") {
       const { client } = ctx;
-      const target = channel.startsWith("#") ? channel : `#${channel}`;
+      const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
       Promise.resolve().then(async () => {
         try {
           const res = await fetch("https://icanhazdadjoke.com/", {
             headers: { "Accept": "application/json", "User-Agent": "TwitchMarkovBot/2.0" }
           });
           const data = await res.json();
-          client.say(target, data && data.joke ? `🥁 ${data.joke}` : "⚠️ Couldn't fetch a dad joke.").catch(() => {});
+          client.say(replyTo, data && data.joke ? `🥁 ${data.joke}` : "⚠️ Couldn't fetch a dad joke.").catch(() => {});
         } catch (e) {
-          client.say(target, "⚠️ Couldn't reach the dad joke server.").catch(() => {});
+          client.say(replyTo, "⚠️ Couldn't reach the dad joke server.").catch(() => {});
         }
       });
       return null;
     }
 
-    if (cmd === "song") {
-      handleSongCommand(channel, ch, tags, ctx);
-      return null;
-    }
+    if (cmd === "song") { handleSongCommand(channel, ch, tags, ctx); return null; }
 
     if (cmd === "8ball") {
       const RESPONSES = [
@@ -270,14 +177,14 @@ function handle(channel, tags, message, ctx) {
     }
 
     if (cmd === "status") {
-      const paused       = !!(state.channelSettings[ch] && state.channelSettings[ch].paused);
-      const onlineOnly   = !!(state.channelSettings[ch] && state.channelSettings[ch].onlineOnly);
-      const channelActive = state.active && !paused;
+      const paused     = !!(state.channelSettings[ch] && state.channelSettings[ch].paused);
+      const onlineOnly = !!(state.channelSettings[ch] && state.channelSettings[ch].onlineOnly);
+      const active     = !paused;
       const intervalSecs = getChannelInterval(ch) / 1000;
       const cooldown     = getChannelCooldown(ch);
-      const cdInfo       = cooldown > 0 ? `${cooldown} msgs` : "none";
+      const cdInfo       = cooldown > 0 ? `${cooldown}` : "none";
       return (
-        `📊 #${ch}: ${channelActive ? "▶ posting" : "⏸ paused"} | ` +
+        `📊 #${ch}: ${active ? "▶ posting" : "⏸ paused"} | ` +
         `Every: ${intervalSecs}s | Min messages: ${cdInfo} | ` +
         `Corpus: ${markov.size.toLocaleString()} lines | ` +
         `Online-only: ${onlineOnly ? "on" : "off"}`
@@ -334,9 +241,9 @@ function handle(channel, tags, message, ctx) {
       if (!target) return `⚠️ Usage: ${PREFIX}join <channel>`;
       if (state.postChannels.includes(target)) return `Already posting in #${target}.`;
       if (!state.channelSettings[target]) state.channelSettings[target] = {};
-      state.channelSettings[target].paused     = true;
-      state.channelSettings[target].onlineOnly  = true;
-      state.channelSettings[target].intervalMs  = 3_600_000;
+      state.channelSettings[target].paused    = true;
+      state.channelSettings[target].onlineOnly = true;
+      state.channelSettings[target].intervalMs = 3_600_000;
       joinChannel(target);
       state.postChannels.push(target);
       saveState();
@@ -435,10 +342,6 @@ function handle(channel, tags, message, ctx) {
       return `📡 Auto-posting: ${postList} | Manual-only: ${manualList} | Learning: ${learnList}`;
     }
 
-    if (cmd === "lines") {
-      return `📚 Lines: ${markov.size} trained (min to post: ${state.minCorpus}).`;
-    }
-
     if (cmd === "removeme") {
       const inPost   = state.postChannels.indexOf(ch);
       const inManual = (state.manualChannels || []).indexOf(ch);
@@ -450,69 +353,6 @@ function handle(channel, tags, message, ctx) {
       saveState();
       setTimeout(() => leaveChannel(ch), 800);
       return `👋 Bot is leaving #${ch}.`;
-    }
-
-    if (cmd === "followage") {
-      const target    = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
-      const lookupCh  = (args[1] || ch).toLowerCase().replace(/^#/, "").trim();
-      if (!target) return `⚠️ Usage: ${PREFIX}followage <username> [channel]`;
-      if (!helixGet) return `⚠️ Twitch API not configured.`;
-      Promise.resolve().then(async () => {
-        const { client } = ctx;
-        const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
-        try {
-          const [bcData, userData] = await Promise.all([
-            helixGet(`users?login=${encodeURIComponent(lookupCh)}`),
-            helixGet(`users?login=${encodeURIComponent(target)}`),
-          ]);
-          const broadcasterId = bcData.data?.[0]?.id;
-          const userId        = userData.data?.[0]?.id;
-          if (!broadcasterId) return client.say(replyTo, `⚠️ Channel #${lookupCh} not found on Twitch.`);
-          if (!userId)        return client.say(replyTo, `⚠️ User ${target} not found on Twitch.`);
-          const followData = await helixGet(`channels/followers?broadcaster_id=${broadcasterId}&user_id=${userId}`);
-          if (!followData.data?.length) return client.say(replyTo, `📊 ${target} is not following #${lookupCh}.`);
-          const followedAt = new Date(followData.data[0].followed_at);
-          const diffMs = new Date() - followedAt;
-          const days   = Math.floor(diffMs / 86_400_000);
-          const years  = Math.floor(days / 365);
-          const months = Math.floor((days % 365) / 30);
-          const remDays = days % 30;
-          const parts = [];
-          if (years)   parts.push(`${years} year${years   !== 1 ? "s" : ""}`);
-          if (months)  parts.push(`${months} month${months !== 1 ? "s" : ""}`);
-          if (remDays || parts.length === 0) parts.push(`${remDays} day${remDays !== 1 ? "s" : ""}`);
-          client.say(replyTo, `📅 ${target} has been following #${lookupCh} for ${parts.join(", ")} (since ${followedAt.toLocaleDateString("en-GB")}).`);
-        } catch (err) {
-          client.say(replyTo, `⚠️ Followage lookup failed: ${err.message}`).catch(() => {});
-        }
-      });
-      return `🔍 Checking followage for ${target} in #${(args[1] || ch).replace(/^#/, "")}...`;
-    }
-
-    if (cmd === "top") {
-      if (markov.size === 0) return `📚 Corpus is empty.`;
-      const freq = new Map();
-      const SKIP = new Set([
-        "the","a","an","and","or","but","is","it","i","to","of","in",
-        "that","was","he","she","they","we","you","this","with","for",
-        "on","are","as","at","be","by","from","not","my","your","his",
-        "her","its","our","their","what","just","so","up","do","if",
-        "me","him","us","them","have","had","has","no","all","can",
-        "been","get","got","im","dont","its","like","would","could",
-      ]);
-      for (const key of markov.chain.keys()) {
-        for (const word of key.split(" ")) {
-          const w = word.toLowerCase().replace(/[^a-z]/g, "");
-          if (w.length < 3 || SKIP.has(w)) continue;
-          freq.set(w, (freq.get(w) || 0) + 1);
-        }
-      }
-      const top = [...freq.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 8)
-        .map(([w, n]) => `${w} (${n})`)
-        .join(", ");
-      return `🔤 Top words in corpus: ${top || "(not enough data)"}`;
     }
 
     if (cmd === "notify") {
@@ -545,7 +385,7 @@ function handle(channel, tags, message, ctx) {
       return `Usage: ${PREFIX}notify live/offline/category on/off | ${PREFIX}notify list`;
     }
 
-    // Unknown command — fall through to public commands so owner can also use ?gpt, ?song, etc.
+    // Fall through to public commands for anything not matched above
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -553,38 +393,27 @@ function handle(channel, tags, message, ctx) {
   // ═══════════════════════════════════════════════════════════════════════════
 
   if (cmd === "help") {
-    if (!hasAnyAccess(tags, state)) {
+    if (hasAnyAccess(tags, state)) {
       return (
-        `Commands (${PREFIX}): ` +
-        `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | notify live/offline/category on/off | ` +
-        `forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove`
-      );
-    }
-    if (isBroadcaster(tags)) {
-      return (
-        `📺 Broadcaster/Mod (${PREFIX}): ` +
-        `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-        `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove | ` +
-        `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
-        `join | leave | manual | unmanual | removeme | ` +
-        `channels | users | adduser <u> | removeuser <u>`
+        `🔧 Mod/Broadcaster (?): ` +
+        `say | markov | dadjoke | gpt | song | 8ball <q> | mock | story | compliment | remind | ` +
+        `forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | ` +
+        `roll | choose | coinflip | bancheck | botcheck | lines | followage | top | status | commands | notify | ` +
+        `start | stop | interval | cooldown | minlines | onlineonly | greeter | join | leave | removeme | channels`
       );
     }
     return (
-      `🔧 Mod/VIP (${PREFIX}): ` +
-      `say | markov <seed> | dadjoke | gpt <q> | song | remind <u> <msg> | 8ball | mock <u> | story | compliment <u> | ` +
-      `lines | followage <u> | top | status | notify | forsen | copypasta | monka | iq <u> | clip | urban <w> | translate <t> | weather <city> | watchtime <u> | commands | howtoadd | howtoremove | ` +
-      `start | stop | interval <s> | cooldown <n> | minlines <n> | onlineonly | greeter | ` +
-      `join | leave | manual | unmanual | removeme | ` +
-      `channels | users | adduser <u> | removeuser <u>`
+      `Commands (?): ` +
+      `say | markov | dadjoke | gpt | song | 8ball <q> | mock | story | compliment | remind | ` +
+      `forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | ` +
+      `roll | choose | coinflip | bancheck | botcheck | lines | followage | top | status | commands | ` +
+      `notify live/offline/category on/off`
     );
   }
 
   if (cmd === "say") {
     const SAY_COOLDOWN_MS = 5 * 60 * 1000;
     const user = (tags.username || "").toLowerCase();
-    // Mods, VIPs, allowed users and above get no cooldown on ?say
     if (!hasAnyAccess(tags, state)) {
       const last = ctx.sayCooldowns[user] || 0;
       const remaining = SAY_COOLDOWN_MS - (Date.now() - last);
@@ -622,27 +451,22 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "dadjoke") {
     const { client } = ctx;
-    const target = channel.startsWith("#") ? channel : `#${channel}`;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
     Promise.resolve().then(async () => {
       try {
         const res = await fetch("https://icanhazdadjoke.com/", {
           headers: { "Accept": "application/json", "User-Agent": "TwitchMarkovBot/2.0" }
         });
         const data = await res.json();
-        client.say(target, data && data.joke ? `🥁 ${data.joke}` : "⚠️ Couldn't fetch a dad joke.").catch(() => {});
+        client.say(replyTo, data && data.joke ? `🥁 ${data.joke}` : "⚠️ Couldn't fetch a dad joke.").catch(() => {});
       } catch (e) {
-        client.say(target, "⚠️ Couldn't reach the dad joke server.").catch(() => {});
+        client.say(replyTo, "⚠️ Couldn't reach the dad joke server.").catch(() => {});
       }
     });
     return null;
   }
 
-  if (cmd === "song") {
-    handleSongCommand(channel, ch, tags, ctx);
-    return null;
-  }
-
-  // ── Public (any viewer) ────────────────────────────────────────────────────
+  if (cmd === "song") { handleSongCommand(channel, ch, tags, ctx); return null; }
 
   if (cmd === "8ball") {
     const RESPONSES = [
@@ -691,12 +515,12 @@ function handle(channel, tags, message, ctx) {
   }
 
   if (cmd === "lines") {
-    return `📚 Lines: ${markov.size} trained (min to post: ${state.minCorpus}).`;
+    return `📚 Lines: ${markov.size} trained.`;
   }
 
   if (cmd === "followage") {
-    const target    = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
-    const lookupCh  = (args[1] || ch).toLowerCase().replace(/^#/, "").trim();
+    const target   = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    const lookupCh = (args[1] || ch).toLowerCase().replace(/^#/, "").trim();
     if (!target) return `⚠️ Usage: ${PREFIX}followage <username> [channel]`;
     if (!helixGet) return `⚠️ Twitch API not configured (missing TWITCH_CLIENT_ID/SECRET).`;
     Promise.resolve().then(async () => {
@@ -728,7 +552,7 @@ function handle(channel, tags, message, ctx) {
         client.say(replyTo, `⚠️ Followage lookup failed: ${err.message}`).catch(() => {});
       }
     });
-    return `🔍 Checking followage for ${target} in #${(args[1] || ch).replace(/^#/, "")}...`;
+    return `🔍 Checking followage for ${target}...`;
   }
 
   if (cmd === "top") {
@@ -754,19 +578,21 @@ function handle(channel, tags, message, ctx) {
       .slice(0, 8)
       .map(([w, n]) => `${w} (${n})`)
       .join(", ");
-    return `🔤 Top words in corpus: ${top || "(not enough data)"}`;
+    return `🔤 Top words in corpus: ${top || "(not enough data)"}.`;
   }
 
   if (cmd === "status") {
-    const paused        = !!(state.channelSettings[ch] && state.channelSettings[ch].paused);
-    const channelActive = state.active && !paused;
-    const intervalSecs  = getChannelInterval(ch) / 1000;
-    const cooldown      = getChannelCooldown(ch);
-    const cdInfo        = cooldown > 0 ? `${cooldown} msgs` : "none";
+    const paused     = !!(state.channelSettings[ch] && state.channelSettings[ch].paused);
+    const onlineOnly = !!(state.channelSettings[ch] && state.channelSettings[ch].onlineOnly);
+    const active     = !paused;
+    const intervalSecs = getChannelInterval(ch) / 1000;
+    const cooldown     = getChannelCooldown(ch);
+    const cdInfo       = cooldown > 0 ? `${cooldown}` : "none";
     return (
-      `📊 #${ch}: ${channelActive ? "▶ posting" : "⏸ paused"} | ` +
+      `📊 #${ch}: ${active ? "▶ posting" : "⏸ paused"} | ` +
       `Every: ${intervalSecs}s | Min messages: ${cdInfo} | ` +
-      `Corpus: ${markov.size.toLocaleString()} lines`
+      `Corpus: ${markov.size.toLocaleString()} lines | ` +
+      `Online-only: ${onlineOnly ? "on" : "off"}`
     );
   }
 
@@ -794,23 +620,17 @@ function handle(channel, tags, message, ctx) {
       }
     }
     if (sub === "list") {
-      if (!hasAnyAccess(tags, state)) return `@${(tags.username||"").toLowerCase()} ❌ Only mods/broadcaster can use ?notify list.`;
       const chUsers = (state.notifyUsers && state.notifyUsers[ch]) || {};
       return `🔔 #${ch} — 🔴 live: ${(chUsers.live||[]).length} | ⚫ offline: ${(chUsers.offline||[]).length} | 🎮 category: ${(chUsers.category||[]).length}`;
     }
     return `Usage: ${PREFIX}notify live/offline/category on/off | ${PREFIX}notify list`;
   }
 
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
-  // ═══════════════════════════════════════════════════════════════════════════
-
   if (cmd === "gpt") {
     const question = args.join(" ").trim();
     if (!question) return `⚠️ Usage: ${PREFIX}gpt <question>`;
     const GROQ_API_KEY = process.env.GROQ_API_KEY;
-    if (!GROQ_API_KEY) return `⚠️ GROQ_API_KEY not set in .env`;
+    if (!GROQ_API_KEY) return `⚠️ GROQ_API_KEY not set — ?gpt is disabled.`;
     const { client } = ctx;
     const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
     const user = (tags.username || "").toLowerCase();
@@ -818,10 +638,7 @@ function handle(channel, tags, message, ctx) {
       try {
         const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
-          headers: {
-            "Content-Type":  "application/json",
-            "Authorization": `Bearer ${GROQ_API_KEY}`,
-          },
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
           body: JSON.stringify({
             model: "llama-3.1-8b-instant",
             messages: [
@@ -832,13 +649,9 @@ function handle(channel, tags, message, ctx) {
           }),
         });
         const data = await res.json();
-        if (data.error) {
-          return client.say(replyTo, `⚠️ Groq error: ${data.error.message}`).catch(() => {});
-        }
+        if (data.error) return client.say(replyTo, `⚠️ Groq error: ${data.error.message}`).catch(() => {});
         const answer = data?.choices?.[0]?.message?.content?.trim();
-        if (!answer) {
-          return client.say(replyTo, "⚠️ Groq returned no answer.").catch(() => {});
-        }
+        if (!answer) return client.say(replyTo, "⚠️ Groq returned no answer.").catch(() => {});
         client.say(replyTo, `@${user} ${answer}`.slice(0, 490)).catch(() => {});
       } catch (e) {
         client.say(replyTo, `⚠️ Groq request failed: ${e.message}`).catch(() => {});
@@ -847,29 +660,23 @@ function handle(channel, tags, message, ctx) {
     return null;
   }
 
-
   if (cmd === "forsen") {
-    const user = (tags.username || "").toLowerCase();
-    return `@${user} ${FORSEN_LINES[Math.floor(Math.random() * FORSEN_LINES.length)]}`;
+    return FORSEN_LINES[Math.floor(Math.random() * FORSEN_LINES.length)];
   }
 
   if (cmd === "copypasta") {
-    const user = (tags.username || "").toLowerCase();
-    const pasta = COPYPASTAS[Math.floor(Math.random() * COPYPASTAS.length)];
-    return `@${user} ${pasta}`.slice(0, 499);
+    return COPYPASTAS[Math.floor(Math.random() * COPYPASTAS.length)].slice(0, 499);
   }
 
   if (cmd === "monka") {
-    const user = (tags.username || "").toLowerCase();
-    return `@${user} ${MONKA_LINES[Math.floor(Math.random() * MONKA_LINES.length)]}`;
+    return MONKA_LINES[Math.floor(Math.random() * MONKA_LINES.length)];
   }
 
   if (cmd === "iq") {
     const target = (args[0] || tags.username || "").toLowerCase().replace(/^@/, "").trim();
-    // Seed by username so the same user always gets the same IQ
     let hash = 0;
     for (let i = 0; i < target.length; i++) hash = (hash * 31 + target.charCodeAt(i)) >>> 0;
-    const iq = 50 + (hash % 101); // range 50–150
+    const iq = 50 + (hash % 101);
     const label =
       iq >= 140 ? "galaxy brain 5Head" :
       iq >= 120 ? "pretty smart ngl" :
@@ -902,26 +709,43 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "commands") {
     const user = (tags.username || "").toLowerCase();
-    return `@${user} Commands (${PREFIX}): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | lines | top | status | notify | howtoadd | howtoremove | help`;
+    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | lines | top | status | roll | choose | coinflip | bancheck | botcheck | notify | help`;
   }
 
   if (cmd === "howtoadd") {
-    return `👋 Want to add the bot to your own channel? Just type ${PREFIX}join in @shlbez's channel!`;
+    const user = (tags.username || "").toLowerCase();
+    return `@${user} 👋 Want to add the bot to your channel? Type ${PREFIX}join in @shlbez's channel!`;
   }
 
   if (cmd === "howtoremove") {
-    return `👋 Want to remove the bot from your channel? Just type ${PREFIX}leave in @shlbez's channel!`;
+    const user = (tags.username || "").toLowerCase();
+    return `@${user} 👋 Want to remove the bot? Type ${PREFIX}removeme in your own channel.`;
   }
 
   if (cmd === "watchtime") {
-    const target = (args[0] || tags.username || "").toLowerCase().replace(/^@/, "").trim();
-    const wt = (ctx.watchtime && ctx.watchtime[ch] && ctx.watchtime[ch][target]) || 0;
-    if (wt === 0) return `👁️ ${target} has no watchtime recorded yet in #${ch}.`;
-    const totalMins = Math.floor(wt / 60);
-    const hours = Math.floor(totalMins / 60);
-    const mins  = totalMins % 60;
-    const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-    return `👁️ ${target} has been watching #${ch} for ${timeStr}.`;
+    const user = (tags.username || "").toLowerCase();
+    // ?watchtime <user1> <user2>  → how long user1 watched user2's channel
+    // ?watchtime <user>           → how long user watched current channel
+    if (args.length >= 2) {
+      const watcher  = args[0].toLowerCase().replace(/^@/, "").trim();
+      const streamer = args[1].toLowerCase().replace(/^@/, "").trim();
+      const wt = (ctx.watchtime && ctx.watchtime[streamer] && ctx.watchtime[streamer][watcher]) || 0;
+      if (wt === 0) return `👁️ ${watcher} has no watchtime recorded in #${streamer}.`;
+      const totalMins = Math.floor(wt / 60);
+      const hours = Math.floor(totalMins / 60);
+      const mins  = totalMins % 60;
+      const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+      return `👁️ ${watcher} has watched #${streamer} for ${timeStr}.`;
+    } else {
+      const target = (args[0] || user).toLowerCase().replace(/^@/, "").trim();
+      const wt = (ctx.watchtime && ctx.watchtime[ch] && ctx.watchtime[ch][target]) || 0;
+      if (wt === 0) return `👁️ ${target} has no watchtime recorded yet in #${ch}.`;
+      const totalMins = Math.floor(wt / 60);
+      const hours = Math.floor(totalMins / 60);
+      const mins  = totalMins % 60;
+      const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+      return `👁️ ${target} has been watching #${ch} for ${timeStr}.`;
+    }
   }
 
   if (cmd === "urban") {
@@ -937,8 +761,7 @@ function handle(channel, tags, message, ctx) {
         const entry = data?.list?.[0];
         if (!entry) return client.say(replyTo, `@${user} ⚠️ No definition found for "${term}".`).catch(() => {});
         const def = entry.definition.replace(/[\[\]]/g, "").replace(/\r?\n/g, " ").trim();
-        const msg = `@${user} 📖 ${term}: ${def}`;
-        client.say(replyTo, msg.slice(0, 490)).catch(() => {});
+        client.say(replyTo, `@${user} 📖 ${term}: ${def}`.slice(0, 490)).catch(() => {});
       } catch (e) {
         client.say(replyTo, `@${user} ⚠️ Urban Dictionary lookup failed.`).catch(() => {});
       }
@@ -947,19 +770,35 @@ function handle(channel, tags, message, ctx) {
   }
 
   if (cmd === "translate") {
-    const text = args.join(" ").trim();
-    if (!text) return `⚠️ Usage: ${PREFIX}translate <text>`;
+    // Usage: ?translate <text>              — auto-detect to English
+    //        ?translate <lang_code> <text>  — explicit source lang (e.g. ?translate fr bonjour)
+    if (args.length === 0) return `⚠️ Usage: ${PREFIX}translate <text>  OR  ${PREFIX}translate <lang> <text>`;
     const { client } = ctx;
     const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
     const user = (tags.username || "").toLowerCase();
+
+    let sourceLang = "autodetect";
+    let textToTranslate;
+    // Detect if first arg is a language code (2–5 chars, letters only, e.g. "fr", "zh-CN")
+    if (args.length >= 2 && /^[a-zA-Z]{2}(-[a-zA-Z]{2})?$/.test(args[0])) {
+      sourceLang    = args[0].toLowerCase();
+      textToTranslate = args.slice(1).join(" ").trim();
+    } else {
+      textToTranslate = args.join(" ").trim();
+    }
+
     Promise.resolve().then(async () => {
       try {
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=autodetect|en`;
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(textToTranslate)}&langpair=${sourceLang}|en`;
         const res  = await fetch(url);
         const data = await res.json();
         const translated = data?.responseData?.translatedText;
-        if (!translated || translated === text) return client.say(replyTo, `@${user} ⚠️ Couldn't translate that.`).catch(() => {});
-        client.say(replyTo, `@${user} 🌐 ${translated}`.slice(0, 490)).catch(() => {});
+        // MyMemory returns the original text back when it can't translate
+        if (!translated || translated.toLowerCase() === textToTranslate.toLowerCase()) {
+          return client.say(replyTo, `@${user} ⚠️ Couldn't translate that. Try specifying the language: ${PREFIX}translate fr <text>`).catch(() => {});
+        }
+        const langTag = sourceLang !== "autodetect" ? ` (${sourceLang} → en)` : "";
+        client.say(replyTo, `@${user} 🌐${langTag} ${translated}`.slice(0, 490)).catch(() => {});
       } catch (e) {
         client.say(replyTo, `@${user} ⚠️ Translation failed.`).catch(() => {});
       }
@@ -994,8 +833,148 @@ function handle(channel, tags, message, ctx) {
     return null;
   }
 
+  if (cmd === "roll") {
+    const input = (args[0] || "1d6").toLowerCase().trim();
+    let numDice, numSides;
+    const ndnMatch  = input.match(/^(\d+)d(\d+)$/);
+    const plainMatch = input.match(/^(\d+)$/);
+    if (ndnMatch) {
+      numDice  = Math.min(parseInt(ndnMatch[1]), 20);
+      numSides = Math.min(parseInt(ndnMatch[2]), 1000);
+    } else if (plainMatch) {
+      numDice  = 1;
+      numSides = Math.min(parseInt(plainMatch[1]), 1000);
+    } else {
+      return `⚠️ Usage: ${PREFIX}roll <sides>  or  ${PREFIX}roll <NdN>  e.g. ?roll 20 or ?roll 2d6`;
+    }
+    if (numDice < 1 || numSides < 2) return `⚠️ Need at least 1 die with 2+ sides.`;
+    const rolls  = Array.from({ length: numDice }, () => Math.floor(Math.random() * numSides) + 1);
+    const total  = rolls.reduce((a, b) => a + b, 0);
+    const detail = numDice > 1 ? ` (${rolls.join(" + ")})` : "";
+    const user   = (tags.username || "").toLowerCase();
+    return `🎲 @${user} rolled ${numDice}d${numSides}: ${total}${detail}`;
+  }
+
+  if (cmd === "choose") {
+    const text = args.join(" ").trim();
+    if (!text) return `⚠️ Usage: ${PREFIX}choose <a> or <b>`;
+    const options = text.split(/\s+or\s+/i).map(s => s.trim()).filter(Boolean);
+    if (options.length < 2) return `⚠️ Separate choices with "or" — e.g. ${PREFIX}choose forsen or xqc`;
+    const pick = options[Math.floor(Math.random() * options.length)];
+    const user = (tags.username || "").toLowerCase();
+    return `🤔 @${user} I choose: ${pick}`;
+  }
+
+  if (cmd === "coinflip") {
+    const user = (tags.username || "").toLowerCase();
+    return `@${user} ${Math.random() < 0.5 ? "🪙 Heads!" : "🪙 Tails!"}`;
+  }
+
+  if (cmd === "bancheck") {
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}bancheck <username>`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    Promise.resolve().then(async () => {
+      try {
+        const res = await fetch(
+          `https://betterbanned.com/api/trpc/streamer.getStreamerByName?input=${encodeURIComponent(JSON.stringify({ json: target }))}`,
+          { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const streamer = data?.result?.data?.json;
+
+        if (!streamer) {
+          return client.say(replyTo, `🔍 ${target} — not found on BetterBanned yet. 🔗 betterbanned.com/en/streamer/${target}`).catch(() => {});
+        }
+
+        const totalBans = streamer.totalBans ?? streamer.bans?.length ?? 0;
+        if (totalBans === 0) {
+          return client.say(replyTo, `✅ ${target} — no bans on record.`).catch(() => {});
+        }
+
+        const bans     = streamer.bans || [];
+        const lastBan  = bans[0];
+        const banDate  = lastBan?.bannedAt ? new Date(lastBan.bannedAt).toLocaleDateString("en-GB") : "unknown";
+        const reason   = lastBan?.reason || "unknown";
+        const duration = lastBan?.duration || (lastBan?.unbannedAt ? "temporary" : "permanent");
+
+        client.say(replyTo,
+          `🔨 ${target} — ${totalBans} ban${totalBans !== 1 ? "s" : ""} | Last: ${banDate} | Reason: ${reason} | Duration: ${duration}`
+        ).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `⚠️ ${target} — ban lookup failed. Check manually: betterbanned.com/en/streamer/${target}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+  if (cmd === "botcheck") {
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}botcheck <channel>`;
+    if (!helixGet) return `⚠️ Twitch API not configured (missing TWITCH_CLIENT_ID/SECRET).`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+
+    if (!ctx.botcheckCooldowns) ctx.botcheckCooldowns = {};
+    const lastBc = ctx.botcheckCooldowns[target] || 0;
+    const bcRemaining = 60_000 - (Date.now() - lastBc);
+    if (bcRemaining > 0) return `@${user} ⏳ ?botcheck on cooldown for ${Math.ceil(bcRemaining / 1000)}s.`;
+    ctx.botcheckCooldowns[target] = Date.now();
+
+    Promise.resolve().then(async () => {
+      try {
+        // Get stream data and channel user info in parallel
+        const [streamData, userData] = await Promise.all([
+          helixGet(`streams?user_login=${encodeURIComponent(target)}`),
+          helixGet(`users?login=${encodeURIComponent(target)}`),
+        ]);
+
+        const stream = streamData.data?.[0];
+        if (!stream) {
+          return client.say(replyTo, `@${user} ⚠️ #${target} is not live right now.`).catch(() => {});
+        }
+
+        const broadcasterId = userData.data?.[0]?.id;
+        const createdAt     = userData.data?.[0]?.created_at;
+        const viewerCount   = stream.viewer_count;
+
+        // Get follower count
+        const followerData  = await helixGet(`channels/followers?broadcaster_id=${broadcasterId}&first=1`);
+        const followerCount = followerData?.total ?? 0;
+
+        // Compute signals
+        const channelAgeDays = createdAt
+          ? Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000)
+          : 9999;
+        const ratio = followerCount > 0 ? (viewerCount / followerCount).toFixed(2) : "∞";
+
+        // Verdict — high viewer:follower ratio on a newer channel is the main signal
+        let verdict;
+        if (followerCount > 0 && viewerCount > followerCount * 0.5 && channelAgeDays < 180) {
+          verdict = "🚨 SUSPICIOUS — very high viewer/follower ratio on a new channel";
+        } else if (followerCount > 0 && viewerCount > followerCount * 2) {
+          verdict = "⚠️ Unusual viewer/follower ratio";
+        } else {
+          verdict = "✅ Looks normal";
+        }
+
+        client.say(replyTo,
+          `@${user} 🤖 #${target}: ${viewerCount.toLocaleString()} viewers | ` +
+          `${followerCount.toLocaleString()} followers | ratio ${ratio} | ` +
+          `channel age: ${channelAgeDays}d | ${verdict}`
+        ).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Botcheck failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
-  // ── ELEVATED ACCESS — mods / VIPs / allowedUsers / broadcaster ───────────
+  // ── ELEVATED ACCESS — mods / VIPs / broadcaster only ─────────────────────
   // ═══════════════════════════════════════════════════════════════════════════
 
   if (!hasAnyAccess(tags, state)) return null;
@@ -1005,22 +984,6 @@ function handle(channel, tags, message, ctx) {
     const manualList = (state.manualChannels || []).join(", ") || "(none)";
     const learnList  = state.learnChannels.join(", ")          || "(none)";
     return `📡 Auto-posting: ${postList} | Manual-only: ${manualList} | Learning: ${learnList}`;
-  }
-
-  if (cmd === "users") {
-    const list = (state.allowedUsers || []).join(", ") || "(none)";
-    return `👥 Owner: ${OWNER} | Allowed users: ${list} | Mods/VIPs can use ${PREFIX}say + basic commands`;
-  }
-
-  if (cmd === "adduser") {
-    const user = (args[0] || "").toLowerCase().trim();
-    if (!user) return `⚠️ Usage: ${PREFIX}adduser <username>`;
-    if (user === OWNER) return `${OWNER} is already the owner.`;
-    if (!state.allowedUsers) state.allowedUsers = [];
-    if (state.allowedUsers.includes(user)) return `${user} already has access.`;
-    state.allowedUsers.push(user);
-    saveState();
-    return `✅ ${user} can now use bot commands.`;
   }
 
   if (cmd === "start") {
@@ -1058,6 +1021,14 @@ function handle(channel, tags, message, ctx) {
       : `💬 [#${ch}] Cooldown set to ${n} messages between bot posts.`;
   }
 
+  if (cmd === "minlines") {
+    const n = parseInt(args[0]);
+    if (isNaN(n) || n < 1) return `⚠️ Usage: ${PREFIX}minlines <number>`;
+    state.minCorpus = n;
+    saveState();
+    return `📚 Minimum lines set to ${n} (current: ${markov.size}).`;
+  }
+
   if (cmd === "onlineonly") {
     const current = !!(state.channelSettings[ch] && state.channelSettings[ch].onlineOnly);
     setChannelSetting(ch, "onlineOnly", !current);
@@ -1075,7 +1046,6 @@ function handle(channel, tags, message, ctx) {
       : `🔕 First-message greeter disabled.`;
   }
 
-  // join / leave / manual / unmanual / removeme — scoped to own channel only
   if (cmd === "join") {
     if (state.postChannels.includes(ch)) return `Already posting in #${ch}.`;
     if (!state.channelSettings[ch]) state.channelSettings[ch] = {};
@@ -1095,28 +1065,6 @@ function handle(channel, tags, message, ctx) {
     state.postChannels.splice(idx, 1);
     saveState();
     return `👋 Left #${ch}.`;
-  }
-
-  if (cmd === "manual") {
-    if (state.postChannels.includes(ch)) return `#${ch} is already a full post channel. Use ${PREFIX}leave first.`;
-    if (state.manualChannels.includes(ch)) return `Already in manual mode for #${ch}.`;
-    if (state.learnChannels.includes(ch)) {
-      state.learnChannels.splice(state.learnChannels.indexOf(ch), 1);
-    } else {
-      joinChannel(ch);
-    }
-    state.manualChannels.push(ch);
-    saveState();
-    return `✅ #${ch} set to manual mode — won't auto-post. Use ${PREFIX}say to post.`;
-  }
-
-  if (cmd === "unmanual") {
-    const idx = state.manualChannels.indexOf(ch);
-    if (idx === -1) return `#${ch} is not in manual mode.`;
-    leaveChannel(ch);
-    state.manualChannels.splice(idx, 1);
-    saveState();
-    return `👋 Left manual channel #${ch}.`;
   }
 
   if (cmd === "removeme") {
@@ -1140,7 +1088,6 @@ function normalise(ch) {
   return ch.replace(/^#/, "").toLowerCase().trim();
 }
 
-
 // ── Forsen one-liners ─────────────────────────────────────────────────────────
 const FORSEN_LINES = [
   "forsenScoots he knows forsenScoots",
@@ -1163,7 +1110,7 @@ const FORSEN_LINES = [
 // ── Classic Twitch copypastas ─────────────────────────────────────────────────
 const COPYPASTAS = [
   "Kripp is such a casual. He plays Path of Exile on STANDARD. What a noob. I bet he has never even played Hardcore. What a waste of a player.",
-  "I used to be a real ad. 󠀀",
+  "I used to be a real ad. \u{E0000}",
   "gachiGASM MY BROTHER gachiGASM WE ARE FAMILY gachiGASM I LOVE YOU gachiGASM",
   "ATTENTION CHAT. This is now a Pogchamp only zone. Any non-Pogchamp emotes will be met with a 600 second timeout. Thank you for your cooperation.",
   "monkaS guys... monkaS chat... monkaS I don't feel so good monkaS",
@@ -1194,8 +1141,8 @@ const MONKA_LINES = [
   "monkaS I'm scared chat monkaS",
 ];
 
-// ── ?song — per-channel cooldown (30s) so it's not spammed ───────────────────
-const songCooldowns = {};  // { channelName: timestamp }
+// ── ?song — per-channel cooldown (30s) ───────────────────────────────────────
+const songCooldowns  = {};
 const SONG_COOLDOWN_MS = 30_000;
 
 function handleSongCommand(channel, ch, tags, ctx) {
@@ -1203,13 +1150,11 @@ function handleSongCommand(channel, ch, tags, ctx) {
   const target = channel.startsWith("#") ? channel : `#${channel}`;
   const user = (tags.username || "").toLowerCase();
 
-  // Check if RAPIDAPI_KEY is configured
   if (!process.env.RAPIDAPI_KEY) {
     client.say(target, `@${user} ⚠️ ?song is not configured — RAPIDAPI_KEY is missing.`).catch(() => {});
     return;
   }
 
-  // Per-channel cooldown
   const last = songCooldowns[ch] || 0;
   const remaining = SONG_COOLDOWN_MS - (Date.now() - last);
   if (remaining > 0) {
@@ -1224,8 +1169,7 @@ function handleSongCommand(channel, ch, tags, ctx) {
     if (!result) {
       client.say(target, `@${user} 🎵 Couldn't identify the song — no music detected or not enough audio.`).catch(() => {});
     } else {
-      const albumPart = result.album ? ` — ${result.album}` : "";
-      client.say(target, `@${user} 🎵 Now playing: ${result.title} by ${result.artist}${albumPart}`).catch(() => {});
+      client.say(target, `@${user} 🎵 Now playing: ${result.title} by ${result.artist}`).catch(() => {});
     }
   }).catch((err) => {
     console.warn(`⚠️  [?song] ${err.message}`);
@@ -1233,4 +1177,4 @@ function handleSongCommand(channel, ch, tags, ctx) {
   });
 }
 
-module.exports = { handle, isOwner, isAllowedUser, isModOrVip, isBroadcaster, PREFIX };
+module.exports = { handle, isOwner, isModOrVip, isBroadcaster, PREFIX };
