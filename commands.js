@@ -797,7 +797,18 @@ function handle(channel, tags, message, ctx) {
         if (!translated || translated.toLowerCase() === textToTranslate.toLowerCase()) {
           return client.say(replyTo, `@${user} ⚠️ Couldn't translate that. Try specifying the language: ${PREFIX}translate fr <text>`).catch(() => {});
         }
-        const langTag = sourceLang !== "autodetect" ? ` (${sourceLang} → en)` : "";
+        // Try to show the detected language even in auto mode
+        let langTag = "";
+        if (sourceLang !== "autodetect") {
+          langTag = ` (${sourceLang} → en)`;
+        } else {
+          // MyMemory returns detected language in responseDetails or match field
+          const detected = data?.responseData?.match
+            ? null  // not reliable
+            : (data?.responseDetails || "").match(/([a-z]{2})/i)?.[1]?.toLowerCase();
+          // Also check if first arg looked like a language we didn't recognise
+          if (detected && detected !== "en") langTag = ` (${detected} → en)`;
+        }
         client.say(replyTo, `@${user} 🌐${langTag} ${translated}`.slice(0, 490)).catch(() => {});
       } catch (e) {
         client.say(replyTo, `@${user} ⚠️ Translation failed.`).catch(() => {});
@@ -877,34 +888,25 @@ function handle(channel, tags, message, ctx) {
     const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
     Promise.resolve().then(async () => {
       try {
-        const res = await fetch(
-          `https://betterbanned.com/api/trpc/streamer.getStreamerByName?input=${encodeURIComponent(JSON.stringify({ json: target }))}`,
-          { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } }
-        );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const streamer = data?.result?.data?.json;
-
-        if (!streamer) {
-          return client.say(replyTo, `🔍 ${target} — not found on BetterBanned yet. 🔗 betterbanned.com/en/streamer/${target}`).catch(() => {});
+        // Check if the user is a Twitch partner (if API keys available)
+        let isPartner = false;
+        if (helixGet) {
+          try {
+            const userData = await helixGet(`users?login=${encodeURIComponent(target)}`);
+            const userInfo = userData?.data?.[0];
+            isPartner = userInfo?.broadcaster_type === "partner";
+          } catch (_) {}
         }
 
-        const totalBans = streamer.totalBans ?? streamer.bans?.length ?? 0;
-        if (totalBans === 0) {
-          return client.say(replyTo, `✅ ${target} — no bans on record.`).catch(() => {});
+        if (isPartner) {
+          // Partners → scrape streamerbans.com which has historical data
+          await checkStreamerBans(target, replyTo, client);
+        } else {
+          // Affiliates and others → use betterbanned.com API
+          await checkBetterBanned(target, replyTo, client);
         }
-
-        const bans     = streamer.bans || [];
-        const lastBan  = bans[0];
-        const banDate  = lastBan?.bannedAt ? new Date(lastBan.bannedAt).toLocaleDateString("en-GB") : "unknown";
-        const reason   = lastBan?.reason || "unknown";
-        const duration = lastBan?.duration || (lastBan?.unbannedAt ? "temporary" : "permanent");
-
-        client.say(replyTo,
-          `🔨 ${target} — ${totalBans} ban${totalBans !== 1 ? "s" : ""} | Last: ${banDate} | Reason: ${reason} | Duration: ${duration}`
-        ).catch(() => {});
       } catch (e) {
-        client.say(replyTo, `⚠️ ${target} — ban lookup failed. Check manually: betterbanned.com/en/streamer/${target}`).catch(() => {});
+        client.say(replyTo, `⚠️ Ban lookup failed for ${target}: ${e.message}`).catch(() => {});
       }
     });
     return null;
@@ -1081,6 +1083,71 @@ function handle(channel, tags, message, ctx) {
   }
 
   return null;
+}
+
+
+// ── bancheck helpers ──────────────────────────────────────────────────────────
+
+async function checkStreamerBans(target, replyTo, client) {
+  // streamerbans.com tracks partners — scrape their user page
+  const res = await fetch(`https://streamerbans.com/user/${encodeURIComponent(target)}`, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; TwitchBot/2.0)", "Accept": "text/html" },
+  });
+  if (!res.ok) {
+    // Fall back to betterbanned if streamerbans fails
+    return checkBetterBanned(target, replyTo, client);
+  }
+  const html = await res.text();
+
+  // Parse ban count from page
+  const banCountMatch = html.match(/(\d+)\s*(?:time|ban)/i);
+  const banCount = banCountMatch ? parseInt(banCountMatch[1]) : null;
+
+  // Parse most recent ban date, duration, reason
+  const dateMatch     = html.match(/(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\w+ \d+,?\s*\d{4})/);
+  const durationMatch = html.match(/(\d+\s*(?:day|hour|week|month|year|perm)[a-z]*)/i);
+  const reasonMatch   = html.match(/[Rr]eason[:\s]+([^<]{5,80})/i);
+
+  if (!banCount && !durationMatch) {
+    // Nothing found — try betterbanned as fallback
+    return checkBetterBanned(target, replyTo, client);
+  }
+
+  const parts = [`🔨 ${target} (partner)`];
+  if (banCount)        parts.push(`${banCount} ban${banCount !== 1 ? "s" : ""}`);
+  if (durationMatch)   parts.push(`last: ${durationMatch[1].trim()}`);
+  if (reasonMatch)     parts.push(`reason: ${reasonMatch[1].trim().slice(0, 60)}`);
+  parts.push(`🔗 streamerbans.com/user/${target}`);
+  client.say(replyTo, parts.join(" | ").slice(0, 499)).catch(() => {});
+}
+
+async function checkBetterBanned(target, replyTo, client) {
+  const res = await fetch(
+    `https://betterbanned.com/api/trpc/streamer.getStreamerByName?input=${encodeURIComponent(JSON.stringify({ json: target }))}`,
+    { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } }
+  );
+  if (!res.ok) throw new Error(`BetterBanned HTTP ${res.status}`);
+  const data = await res.json();
+  const streamer = data?.result?.data?.json;
+
+  if (!streamer) {
+    return client.say(replyTo, `🔍 ${target} — not found on record. Check: betterbanned.com/en/streamer/${target}`).catch(() => {});
+  }
+
+  const totalBans = streamer.totalBans ?? streamer.bans?.length ?? 0;
+  if (totalBans === 0) {
+    return client.say(replyTo, `✅ ${target} — no bans on record.`).catch(() => {});
+  }
+
+  const bans     = streamer.bans || [];
+  const lastBan  = bans[0];
+  const banDate  = lastBan?.bannedAt ? new Date(lastBan.bannedAt).toLocaleDateString("en-GB") : "unknown";
+  const reason   = lastBan?.reason   || "unknown";
+  const duration = lastBan?.duration || (lastBan?.unbannedAt ? "temporary" : "permanent");
+
+  client.say(replyTo,
+    `🔨 ${target} — ${totalBans} ban${totalBans !== 1 ? "s" : ""} | Last: ${banDate} | Reason: ${reason} | Duration: ${duration}`
+  ).catch(() => {});
 }
 
 function normalise(ch) {
