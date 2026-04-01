@@ -114,7 +114,7 @@ function handle(channel, tags, message, ctx) {
       return null;
     }
 
-    if (cmd === "song") { handleSongCommand(channel, ch, tags, ctx); return null; }
+    if (cmd === "song" || cmd === "music") { handleSongCommand(channel, ch, tags, ctx); return null; }
 
     if (cmd === "8ball") {
       const RESPONSES = [
@@ -466,7 +466,7 @@ function handle(channel, tags, message, ctx) {
     return null;
   }
 
-  if (cmd === "song") { handleSongCommand(channel, ch, tags, ctx); return null; }
+  if (cmd === "song" || cmd === "music") { handleSongCommand(channel, ch, tags, ctx); return null; }
 
   if (cmd === "8ball") {
     const RESPONSES = [

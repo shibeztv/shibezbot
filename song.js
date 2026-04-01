@@ -2,42 +2,54 @@
  * song.js — Live stream song recognition via Groq Whisper + LLaMA
  *
  * Flow:
- *   1. yt-dlp  → gets the direct HLS stream URL from Twitch
- *   2. ffmpeg  → captures ~15s of audio as WAV (16kHz mono, ~480KB)
- *   3. Whisper → transcribes the audio to text (lyrics / speech)
- *   4. LLaMA   → identifies the song from the transcription
+ *   1. yt-dlp  → gets direct HLS stream URL from Twitch
+ *   2. ffmpeg  → captures 20s of audio as WAV (16kHz mono, ~640KB)
+ *   3. Whisper → transcribes audio to lyrics/text
+ *   4. LLaMA   → identifies song from the transcription
  *
- * Only requires GROQ_API_KEY (same key used by ?gpt). No extra API keys.
+ * Retries once with a fresh audio segment if the first transcript is too short.
+ * Only requires GROQ_API_KEY — same key as ?gpt, no extra signup needed.
  */
 
 const { execFile, spawn } = require("child_process");
 const https               = require("https");
 
-const CAPTURE_SECS = 15;  // 15s gives Whisper enough lyric content to work with
+const CAPTURE_SECS     = 20;   // 20s gives Whisper more lyrics to work with
+const MIN_TRANSCRIPT   = 5;    // chars — below this we assume no clear vocals
 
 async function identify(channel) {
   const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
   if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY is not set — needed for ?song.");
 
-  // Step 1: get HLS stream URL from Twitch
+  // Step 1: get stream URL once, reuse for both attempts
   const streamUrl = await getStreamUrl(channel);
   console.log(`🎵 [song] Got stream URL for #${channel}`);
 
-  // Step 2: capture audio
-  const audioBuffer = await captureFromUrl(streamUrl);
-  console.log(`🎵 [song] Captured ${audioBuffer.length} bytes of audio`);
+  // Steps 2+3: try up to 2 segments in case Whisper catches an instrumental break
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    console.log(`🎵 [song] Attempt ${attempt}: capturing audio...`);
+    const audioBuffer = await captureFromUrl(streamUrl);
+    console.log(`🎵 [song] Attempt ${attempt}: captured ${audioBuffer.length} bytes`);
 
-  // Step 3: transcribe with Groq Whisper
-  const transcript = await transcribeAudio(audioBuffer, GROQ_API_KEY);
-  console.log(`🎵 [song] Transcript: "${(transcript || "").slice(0, 120)}"`);
+    const transcript = await transcribeAudio(audioBuffer, GROQ_API_KEY);
+    const trimmed = (transcript || "").trim();
+    console.log(`🎵 [song] Attempt ${attempt} transcript (${trimmed.length} chars): "${trimmed.slice(0, 150)}"`);
 
-  if (!transcript || transcript.trim().length < 8) {
-    console.log("🎵 [song] Transcript too short — no audible lyrics/speech detected.");
-    return null;
+    if (trimmed.length < MIN_TRANSCRIPT) {
+      console.log(`🎵 [song] Attempt ${attempt}: transcript too short, ${attempt < 2 ? "retrying..." : "giving up."}`);
+      continue;
+    }
+
+    // Step 4: identify from transcript
+    const result = await identifySong(trimmed, GROQ_API_KEY);
+    if (result) {
+      console.log(`🎵 [song] Identified: ${result.title} by ${result.artist}`);
+      return result;
+    }
+    console.log(`🎵 [song] Attempt ${attempt}: LLaMA couldn't identify song from transcript.`);
   }
 
-  // Step 4: identify song from transcript using LLaMA
-  return await identifySong(transcript, GROQ_API_KEY);
+  return null;
 }
 
 // ── Step 1: yt-dlp --get-url ──────────────────────────────────────────────────
@@ -84,14 +96,14 @@ function captureFromUrl(url) {
     }
 
     const ffmpeg = spawn("ffmpeg", [
-      "-reconnect",          "1",
-      "-reconnect_streamed", "1",
-      "-reconnect_delay_max","5",
+      "-reconnect",           "1",
+      "-reconnect_streamed",  "1",
+      "-reconnect_delay_max", "5",
       "-i",   url,
       "-t",   String(CAPTURE_SECS),
       "-vn",
       "-f",   "wav",
-      "-ar",  "16000",   // 16kHz mono — Whisper's native rate, keeps file ~480KB
+      "-ar",  "16000",  // 16kHz mono — Whisper's native rate, keeps file ~640KB
       "-ac",  "1",
       "pipe:1",
     ], { stdio: ["ignore", "pipe", "pipe"] });
@@ -115,8 +127,8 @@ function captureFromUrl(url) {
 
     const timer = setTimeout(() => {
       ffmpeg.kill("SIGKILL");
-      settle(reject, new Error("Audio capture timed out after 35s."));
-    }, 35_000);
+      settle(reject, new Error("Audio capture timed out after 40s."));
+    }, 40_000);
   });
 }
 
@@ -124,8 +136,11 @@ function captureFromUrl(url) {
 
 function transcribeAudio(audioBuffer, apiKey) {
   return new Promise((resolve, reject) => {
-    // Build multipart/form-data body manually — no external deps needed
     const boundary = "----GroqWhisper" + Math.random().toString(36).slice(2);
+
+    // Adding a prompt biases Whisper toward transcribing sung lyrics
+    // rather than treating everything as speech
+    const promptText = "Song lyrics:";
 
     const body = Buffer.concat([
       Buffer.from(
@@ -138,6 +153,12 @@ function transcribeAudio(audioBuffer, apiKey) {
         `\r\n--${boundary}\r\n` +
         `Content-Disposition: form-data; name="model"\r\n\r\n` +
         `whisper-large-v3-turbo\r\n` +
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="language"\r\n\r\n` +
+        `en\r\n` +
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="prompt"\r\n\r\n` +
+        `${promptText}\r\n` +
         `--${boundary}--\r\n`
       ),
     ]);
@@ -147,8 +168,8 @@ function transcribeAudio(audioBuffer, apiKey) {
       hostname: "api.groq.com",
       path:     "/openai/v1/audio/transcriptions",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type":  `multipart/form-data; boundary=${boundary}`,
+        "Authorization":  `Bearer ${apiKey}`,
+        "Content-Type":   `multipart/form-data; boundary=${boundary}`,
         "Content-Length": body.length,
       },
     };
@@ -157,7 +178,7 @@ function transcribeAudio(audioBuffer, apiKey) {
       let data = "";
       res.on("data", chunk => { data += chunk; });
       res.on("end", () => {
-        console.log(`🎵 [song] Whisper status=${res.statusCode} body=${data.slice(0, 200)}`);
+        console.log(`🎵 [song] Whisper status=${res.statusCode}`);
         if (res.statusCode !== 200) {
           return reject(new Error(`Whisper HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
         }
@@ -181,25 +202,24 @@ function transcribeAudio(audioBuffer, apiKey) {
 function identifySong(transcript, apiKey) {
   return new Promise((resolve, reject) => {
     const prompt =
-      `The following text was transcribed from about 15 seconds of audio from a live stream. ` +
-      `It may contain song lyrics, partial lyrics, or speech near music. ` +
-      `Identify the song title and artist.\n\n` +
+      `The following text was transcribed from about 20 seconds of audio from a live stream. ` +
+      `It may contain song lyrics, partial lyrics, or speech near music.\n\n` +
       `Transcription:\n"${transcript}"\n\n` +
-      `Reply in this exact format and nothing else:\n` +
+      `If you can identify the song, reply in this exact format:\n` +
       `TITLE: <song title>\nARTIST: <artist name>\n\n` +
-      `If you cannot identify a specific song with confidence, reply exactly: UNKNOWN`;
+      `If you are not confident, reply exactly: UNKNOWN`;
 
     const body = JSON.stringify({
-      model: "llama-3.1-8b-instant",
+      model: "llama-3.3-70b-versatile",  // larger model = better music knowledge
       messages: [
         {
           role:    "system",
-          content: "You are a music expert. Identify songs from lyrics or partial transcriptions. Be concise and accurate. Never guess if unsure.",
+          content: "You are a music expert who identifies songs from partial lyric transcriptions. Only identify a song if you are confident. Never guess.",
         },
         { role: "user", content: prompt },
       ],
-      max_tokens:  60,
-      temperature: 0,  // deterministic — we want the single most likely answer
+      max_tokens:  80,
+      temperature: 0.1,
     });
 
     const options = {
@@ -225,6 +245,8 @@ function identifySong(transcript, apiKey) {
           const json   = JSON.parse(data);
           const answer = (json?.choices?.[0]?.message?.content || "").trim();
 
+          console.log(`🎵 [song] LLaMA answer: "${answer}"`);
+
           if (!answer || answer.toUpperCase().startsWith("UNKNOWN")) {
             return resolve(null);
           }
@@ -239,7 +261,6 @@ function identifySong(transcript, apiKey) {
             });
           }
 
-          // LLaMA gave something but didn't follow the format — treat as unknown
           resolve(null);
         } catch (e) {
           reject(new Error(`LLaMA parse error: ${e.message}`));
