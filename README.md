@@ -147,7 +147,7 @@ Everything above, plus cross-channel control:
 7. **First-message greeter** — when enabled with `?greeter`, welcomes first-time chatters with a Markov message.
 8. **Online-only mode** — when enabled with `?onlineonly`, skips auto-posts while the stream is offline.
 9. **Groq AI** — `?gpt` uses Groq's free API (LLaMA 3.1) to answer questions in chat.
-10. **Song recognition** — `?song` captures live stream audio and identifies the track via Shazam (RapidAPI).
+10. **Song recognition** — `?song` captures live stream audio, transcribes it with Groq Whisper, then identifies the song using Groq LLaMA. No extra API key needed — uses the same `GROQ_API_KEY` as `?gpt`.
 11. **Fresh channel defaults** — new channels start paused with online-only on and a 1-hour interval. Streamer types `?start` to activate.
 
 ---
@@ -193,8 +193,7 @@ twitch-markov-bot/
 | `CHANNEL` | ✅ | Your channel name (no #) |
 | `TWITCH_CLIENT_ID` | Optional | Enables `?followage`, `?clip`, `?botcheck`, live notifications, online-only mode |
 | `TWITCH_CLIENT_SECRET` | Optional | Same as above — create an app at dev.twitch.tv/console/apps |
-| `GROQ_API_KEY` | Optional | Enables `?gpt` — free key at console.groq.com |
-| `RAPIDAPI_KEY` | Optional | Enables `?song` (Shazam) — free key at rapidapi.com/apidojo/api/shazam |
+| `GROQ_API_KEY` | Optional | Enables `?gpt` and `?song` — free key at console.groq.com |
 
 ---
 

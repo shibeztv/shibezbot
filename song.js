@@ -1,36 +1,46 @@
 /**
- * song.js — Live stream song recognition via Shazam (RapidAPI)
+ * song.js — Live stream song recognition via Groq Whisper + LLaMA
+ *
+ * Flow:
+ *   1. yt-dlp  → gets the direct HLS stream URL from Twitch
+ *   2. ffmpeg  → captures ~15s of audio as WAV (16kHz mono, ~480KB)
+ *   3. Whisper → transcribes the audio to text (lyrics / speech)
+ *   4. LLaMA   → identifies the song from the transcription
+ *
+ * Only requires GROQ_API_KEY (same key used by ?gpt). No extra API keys.
  */
 
 const { execFile, spawn } = require("child_process");
 const https               = require("https");
 
-const RAPIDAPI_KEY  = process.env.RAPIDAPI_KEY || "";
-const RAPIDAPI_HOST = "shazam.p.rapidapi.com";
-const CAPTURE_SECS  = 10;
+const CAPTURE_SECS = 15;  // 15s gives Whisper enough lyric content to work with
 
 async function identify(channel) {
-  if (!RAPIDAPI_KEY) throw new Error("RAPIDAPI_KEY is not set in environment.");
+  const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY is not set — needed for ?song.");
 
-  // Step 1: get direct stream URL (only once — reuse for retry)
+  // Step 1: get HLS stream URL from Twitch
   const streamUrl = await getStreamUrl(channel);
   console.log(`🎵 [song] Got stream URL for #${channel}`);
 
-  // Steps 2+3: try up to 2 times in case Shazam catches a quiet moment
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    const audioBuffer = await captureFromUrl(streamUrl);
-    console.log(`🎵 [song] Attempt ${attempt}: captured ${audioBuffer.length} bytes`);
-    const result = await queryShazam(audioBuffer);
-    if (result) return result;
-    if (attempt < 2) console.log(`🎵 [song] No match on attempt ${attempt}, retrying...`);
+  // Step 2: capture audio
+  const audioBuffer = await captureFromUrl(streamUrl);
+  console.log(`🎵 [song] Captured ${audioBuffer.length} bytes of audio`);
+
+  // Step 3: transcribe with Groq Whisper
+  const transcript = await transcribeAudio(audioBuffer, GROQ_API_KEY);
+  console.log(`🎵 [song] Transcript: "${(transcript || "").slice(0, 120)}"`);
+
+  if (!transcript || transcript.trim().length < 8) {
+    console.log("🎵 [song] Transcript too short — no audible lyrics/speech detected.");
+    return null;
   }
-  return null;
+
+  // Step 4: identify song from transcript using LLaMA
+  return await identifySong(transcript, GROQ_API_KEY);
 }
 
 // ── Step 1: yt-dlp --get-url ──────────────────────────────────────────────────
-// Twitch's metadata endpoint requires auth as a cookie (auth-token), NOT as an
-// Authorization header. Passing --add-header "Cookie:auth-token=TOKEN" is the
-// correct way to authenticate with yt-dlp for Twitch streams.
 
 function getStreamUrl(channel) {
   return new Promise((resolve, reject) => {
@@ -42,7 +52,7 @@ function getStreamUrl(channel) {
       "--get-url",
     ];
     if (rawToken) {
-      // Pass token as a cookie — this is what Twitch's API actually checks
+      // Twitch requires auth as a cookie, not an Authorization header
       args.push("--add-header", `Cookie:auth-token=${rawToken}`);
     }
     args.push(`https://www.twitch.tv/${channel}`);
@@ -55,16 +65,13 @@ function getStreamUrl(channel) {
         return reject(new Error(`yt-dlp failed: ${stderr.trim() || err.message}`));
       }
       const url = stdout.trim();
-      if (!url) {
-        console.error(`🎵 [song] yt-dlp returned empty URL. stderr: ${stderr.trim()}`);
-        return reject(new Error("yt-dlp returned no URL — is the channel live?"));
-      }
+      if (!url) return reject(new Error("yt-dlp returned no URL — is the channel live?"));
       resolve(url);
     });
   });
 }
 
-// ── Step 2: ffmpeg reads HLS URL directly ────────────────────────────────────
+// ── Step 2: ffmpeg captures audio ────────────────────────────────────────────
 
 function captureFromUrl(url) {
   return new Promise((resolve, reject) => {
@@ -77,112 +84,171 @@ function captureFromUrl(url) {
     }
 
     const ffmpeg = spawn("ffmpeg", [
-      "-reconnect", "1",
+      "-reconnect",          "1",
       "-reconnect_streamed", "1",
-      "-reconnect_delay_max", "5",
-      "-i", url,
-      "-t", String(CAPTURE_SECS),
+      "-reconnect_delay_max","5",
+      "-i",   url,
+      "-t",   String(CAPTURE_SECS),
       "-vn",
-      "-f", "wav",       // WAV container — Shazam needs headers, not raw PCM
-      "-ar", "44100",    // 44.1kHz — full CD quality for better Shazam fingerprinting
-      "-ac", "2",
+      "-f",   "wav",
+      "-ar",  "16000",   // 16kHz mono — Whisper's native rate, keeps file ~480KB
+      "-ac",  "1",
       "pipe:1",
     ], { stdio: ["ignore", "pipe", "pipe"] });
 
-    const chunks = [];
+    const chunks    = [];
     const errChunks = [];
-    ffmpeg.stdout.on("data", chunk => chunks.push(chunk));
-    ffmpeg.stderr.on("data", chunk => errChunks.push(chunk));
+    ffmpeg.stdout.on("data", c => chunks.push(c));
+    ffmpeg.stderr.on("data", c => errChunks.push(c));
 
     ffmpeg.on("close", () => {
-      const ffmpegLog = Buffer.concat(errChunks).toString().slice(-300);
       if (chunks.length === 0) {
-        console.error(`🎵 [song] ffmpeg produced no audio. log: ${ffmpegLog}`);
+        const log = Buffer.concat(errChunks).toString().slice(-300);
+        console.error(`🎵 [song] ffmpeg produced no audio. log: ${log}`);
         settle(reject, new Error("ffmpeg produced no audio output."));
       } else {
         settle(resolve, Buffer.concat(chunks));
       }
     });
 
-    ffmpeg.on("error", err => {
-      settle(reject, new Error(`ffmpeg error: ${err.message}`));
-    });
+    ffmpeg.on("error", err => settle(reject, new Error(`ffmpeg error: ${err.message}`)));
 
     const timer = setTimeout(() => {
       ffmpeg.kill("SIGKILL");
-      settle(reject, new Error("Audio capture timed out after 30s."));
-    }, 30_000);
+      settle(reject, new Error("Audio capture timed out after 35s."));
+    }, 35_000);
   });
 }
 
-// ── Step 3: Shazam via RapidAPI ───────────────────────────────────────────────
+// ── Step 3: Groq Whisper transcription ───────────────────────────────────────
 
-const MAX_SHAZAM_BYTES = 1_000_000; // Shazam hard cap
-
-function queryShazam(audioBuffer) {
-  // Trim to 1MB if over — preserves WAV header (44 bytes) at the front
-  if (audioBuffer.length > MAX_SHAZAM_BYTES) {
-    console.warn(`🎵 [song] Audio ${audioBuffer.length} bytes > 1MB, trimming`);
-    audioBuffer = audioBuffer.slice(0, MAX_SHAZAM_BYTES);
-  }
-  console.log(`🎵 [song] Sending ${audioBuffer.length} bytes to Shazam`);
-
+function transcribeAudio(audioBuffer, apiKey) {
   return new Promise((resolve, reject) => {
+    // Build multipart/form-data body manually — no external deps needed
+    const boundary = "----GroqWhisper" + Math.random().toString(36).slice(2);
+
+    const body = Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n` +
+        `Content-Type: audio/wav\r\n\r\n`
+      ),
+      audioBuffer,
+      Buffer.from(
+        `\r\n--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="model"\r\n\r\n` +
+        `whisper-large-v3-turbo\r\n` +
+        `--${boundary}--\r\n`
+      ),
+    ]);
+
     const options = {
       method:   "POST",
-      hostname: RAPIDAPI_HOST,
-      path:     "/songs/detect",
+      hostname: "api.groq.com",
+      path:     "/openai/v1/audio/transcriptions",
       headers: {
-        "content-type":   "text/plain",   // Shazam /songs/detect expects base64-encoded audio
-        "X-RapidAPI-Key":  RAPIDAPI_KEY,
-        "X-RapidAPI-Host": RAPIDAPI_HOST,
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type":  `multipart/form-data; boundary=${boundary}`,
+        "Content-Length": body.length,
       },
     };
 
     const req = https.request(options, res => {
-      // Handle gzip / brotli compressed responses from RapidAPI
-      let stream = res;
-      const encoding = res.headers["content-encoding"];
-      if (encoding === "gzip" || encoding === "br") {
-        const zlib = require("zlib");
-        stream = encoding === "gzip"
-          ? res.pipe(zlib.createGunzip())
-          : res.pipe(zlib.createBrotliDecompress());
-      }
-
-      const chunks = [];
-      stream.on("data", chunk => chunks.push(chunk));
-      stream.on("end", () => {
-        const data = Buffer.concat(chunks).toString("utf8");
-        console.log(`🎵 [song] Shazam status=${res.statusCode} body=${data.slice(0, 300)}`);
-
-        // 204 = Shazam heard audio but found no match — not an error
-        if (res.statusCode === 204 || !data.trim()) {
-          return resolve(null);
-        }
-
+      let data = "";
+      res.on("data", chunk => { data += chunk; });
+      res.on("end", () => {
+        console.log(`🎵 [song] Whisper status=${res.statusCode} body=${data.slice(0, 200)}`);
         if (res.statusCode !== 200) {
-          return reject(new Error(`Shazam HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
+          return reject(new Error(`Whisper HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
         }
-
         try {
           const json = JSON.parse(data);
-          const track = json?.track;
-          if (track && track.title) {
-            resolve({ title: track.title, artist: track.subtitle || "Unknown" });
-          } else {
-            resolve(null);
-          }
+          resolve(json.text || null);
         } catch (e) {
-          reject(new Error(`Shazam parse error: ${e.message} — raw: ${data.slice(0, 200)}`));
+          reject(new Error(`Whisper parse error: ${e.message}`));
         }
       });
-
-      stream.on("error", err => reject(new Error(`Shazam stream error: ${err.message}`)));
     });
 
-    req.on("error", err => reject(new Error(`Shazam request error: ${err.message}`)));
-    req.write(audioBuffer.toString("base64"));  // Shazam expects base64-encoded audio
+    req.on("error", err => reject(new Error(`Whisper request error: ${err.message}`)));
+    req.write(body);
+    req.end();
+  });
+}
+
+// ── Step 4: Groq LLaMA song identification ────────────────────────────────────
+
+function identifySong(transcript, apiKey) {
+  return new Promise((resolve, reject) => {
+    const prompt =
+      `The following text was transcribed from about 15 seconds of audio from a live stream. ` +
+      `It may contain song lyrics, partial lyrics, or speech near music. ` +
+      `Identify the song title and artist.\n\n` +
+      `Transcription:\n"${transcript}"\n\n` +
+      `Reply in this exact format and nothing else:\n` +
+      `TITLE: <song title>\nARTIST: <artist name>\n\n` +
+      `If you cannot identify a specific song with confidence, reply exactly: UNKNOWN`;
+
+    const body = JSON.stringify({
+      model: "llama-3.1-8b-instant",
+      messages: [
+        {
+          role:    "system",
+          content: "You are a music expert. Identify songs from lyrics or partial transcriptions. Be concise and accurate. Never guess if unsure.",
+        },
+        { role: "user", content: prompt },
+      ],
+      max_tokens:  60,
+      temperature: 0,  // deterministic — we want the single most likely answer
+    });
+
+    const options = {
+      method:   "POST",
+      hostname: "api.groq.com",
+      path:     "/openai/v1/chat/completions",
+      headers: {
+        "Authorization":  `Bearer ${apiKey}`,
+        "Content-Type":   "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+    };
+
+    const req = https.request(options, res => {
+      let data = "";
+      res.on("data", chunk => { data += chunk; });
+      res.on("end", () => {
+        console.log(`🎵 [song] LLaMA status=${res.statusCode} body=${data.slice(0, 300)}`);
+        if (res.statusCode !== 200) {
+          return reject(new Error(`LLaMA HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
+        }
+        try {
+          const json   = JSON.parse(data);
+          const answer = (json?.choices?.[0]?.message?.content || "").trim();
+
+          if (!answer || answer.toUpperCase().startsWith("UNKNOWN")) {
+            return resolve(null);
+          }
+
+          const titleMatch  = answer.match(/TITLE:\s*(.+)/i);
+          const artistMatch = answer.match(/ARTIST:\s*(.+)/i);
+
+          if (titleMatch && artistMatch) {
+            return resolve({
+              title:  titleMatch[1].trim(),
+              artist: artistMatch[1].trim(),
+            });
+          }
+
+          // LLaMA gave something but didn't follow the format — treat as unknown
+          resolve(null);
+        } catch (e) {
+          reject(new Error(`LLaMA parse error: ${e.message}`));
+        }
+      });
+    });
+
+    req.on("error", err => reject(new Error(`LLaMA request error: ${err.message}`)));
+    req.write(body);
     req.end();
   });
 }

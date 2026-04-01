@@ -1217,8 +1217,8 @@ function handleSongCommand(channel, ch, tags, ctx) {
   const target = channel.startsWith("#") ? channel : `#${channel}`;
   const user = (tags.username || "").toLowerCase();
 
-  if (!process.env.RAPIDAPI_KEY) {
-    client.say(target, `@${user} ⚠️ ?song is not configured — RAPIDAPI_KEY is missing.`).catch(() => {});
+  if (!process.env.GROQ_API_KEY) {
+    client.say(target, `@${user} ⚠️ ?song is not configured — GROQ_API_KEY is missing.`).catch(() => {});
     return;
   }
 
