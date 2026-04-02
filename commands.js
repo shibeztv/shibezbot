@@ -65,7 +65,7 @@ function handle(channel, tags, message, ctx) {
         `👑 Owner (?): ` +
         `say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | ` +
         `forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | ` +
-        `roll | choose | coinflip | bancheck | botcheck | lines | followage | top | status | commands | ` +
+        `roll | choose | coinflip | bancheck | botcheck | forsenalert | forsenrun | lines | followage | top | status | commands | ` +
         `notify | start | stop | interval | cooldown | minlines | onlineonly | greeter | ` +
         `join | leave | manual | unmanual | addlearn | removelearn | adduser | removeuser | users | ` +
         `channels | removeme`
@@ -398,7 +398,7 @@ function handle(channel, tags, message, ctx) {
         `🔧 Mod/Broadcaster (?): ` +
         `say | markov | dadjoke | gpt | song | 8ball <q> | mock | story | compliment | remind | ` +
         `forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | ` +
-        `roll | choose | coinflip | bancheck | botcheck | lines | followage | top | status | commands | notify | ` +
+        `roll | choose | coinflip | bancheck | botcheck | forsenalert | forsenrun | lines | followage | top | status | commands | notify | ` +
         `start | stop | interval | cooldown | minlines | onlineonly | greeter | join | leave | removeme | channels`
       );
     }
@@ -406,7 +406,7 @@ function handle(channel, tags, message, ctx) {
       `Commands (?): ` +
       `say | markov | dadjoke | gpt | song | 8ball <q> | mock | story | compliment | remind | ` +
       `forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | ` +
-      `roll | choose | coinflip | bancheck | botcheck | lines | followage | top | status | commands | ` +
+      `roll | choose | coinflip | bancheck | botcheck | forsenalert | forsenrun | lines | followage | top | status | commands | ` +
       `notify live/offline/category on/off`
     );
   }
@@ -709,7 +709,7 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "commands") {
     const user = (tags.username || "").toLowerCase();
-    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | lines | top | status | roll | choose | coinflip | bancheck | botcheck | notify | help`;
+    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | lines | top | status | roll | choose | coinflip | forsenalert | forsenrun | bancheck | botcheck | notify | help`;
   }
 
   if (cmd === "howtoadd") {
@@ -879,6 +879,64 @@ function handle(channel, tags, message, ctx) {
   if (cmd === "coinflip") {
     const user = (tags.username || "").toLowerCase();
     return `@${user} ${Math.random() < 0.5 ? "🪙 Heads!" : "🪙 Tails!"}`;
+  }
+
+  if (cmd === "forsenalert") {
+    const user = (tags.username || "").toLowerCase();
+    if (!state.forsenAlertUsers) state.forsenAlertUsers = [];
+    const idx = state.forsenAlertUsers.indexOf(user);
+    if (idx === -1) {
+      state.forsenAlertUsers.push(user);
+      saveState();
+      return "@" + user + " forsenE You're subscribed to forsen MC god run alerts!";
+    } else {
+      state.forsenAlertUsers.splice(idx, 1);
+      saveState();
+      return "@" + user + " 🔕 Unsubscribed from forsen MC run alerts.";
+    }
+  }
+
+  if (cmd === "forsenrun") {
+    const isLive = ctx.isForsenLive && ctx.isForsenLive();
+    if (!isLive) return "forsen is not live right now.";
+    const data = ctx.forsenMcLatestData && ctx.forsenMcLatestData();
+    if (!data) return "🎮 No run data yet — forsen might not be playing Minecraft.";
+
+    const gameTimeStr = data.gameTime || data.game_time || data.GameTime || "";
+    const realTimeStr = data.realTime || data.real_time || data.RealTime || "";
+
+    if (!gameTimeStr) return "🎮 No active run data available.";
+
+    function fmtTime(t) {
+      if (!t) return null;
+      const parts = t.split(":");
+      if (parts.length === 3) {
+        const h = parseInt(parts[0]);
+        const m = parseInt(parts[1]);
+        const s = Math.floor(parseFloat(parts[2]));
+        if (h > 0) return h + "h " + m + "m " + s + "s";
+        return m + "m " + s + "s";
+      } else if (parts.length === 2) {
+        const m = parseInt(parts[0]);
+        const s = Math.floor(parseFloat(parts[1]));
+        return m + "m " + s + "s";
+      }
+      return t;
+    }
+
+    const gameTime = fmtTime(gameTimeStr);
+    const realTime = fmtTime(realTimeStr);
+
+    // Try to get structure/split info from API data
+    const structure =
+      data.currentSplit || data.current_split || data.split ||
+      data.structure || data.location || data.dimension ||
+      data.phase || data.milestone || null;
+
+    const structurePart = structure ? " | 📍 " + structure : "";
+    const realPart = realTime ? " | Real: " + realTime : "";
+
+    return "🎮 forsen MC run — ⏱️ " + gameTime + realPart + structurePart;
   }
 
   if (cmd === "bancheck") {

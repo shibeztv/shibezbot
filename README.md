@@ -39,6 +39,8 @@ All commands use the `?` prefix.
 | `?roll <sides>` | Roll a die — e.g. `?roll 20` rolls 1d20, `?roll 2d6` rolls two 6-sided dice |
 | `?choose <a> or <b>` | Bot picks one option randomly from a list separated by "or" |
 | `?coinflip` | Flip a coin |
+| `?forsenalert` | Subscribe/unsubscribe to forsen MC god run pings — bot @-mentions you when forsen hits a good run |
+| `?forsenrun` | Show forsen's current Minecraft speedrun time and structure (only works when forsen is live) |
 | `?bancheck <user>` | Look up a user's ban history on betterbanned.com |
 | `?botcheck <channel>` | Check a live channel's viewer/follower ratio for bot activity |
 | `?lines` | Show current corpus line count |
@@ -128,6 +130,8 @@ Everything above, plus cross-channel control:
 ?translate como estas       → @shlbez 🌐 how are you
 ?watchtime shlbez           → 👁️ shlbez has been watching #shlbez for 12h 30m.
 ?watchtime viewer1 shlbez   → 👁️ viewer1 has watched #shlbez for 5h 20m.
+?forsenalert             → forsenE You're subscribed to forsen MC god run alerts!
+?forsenrun               → 🎮 forsen MC run — ⏱️ 9m 32s | Real: 10m 1s | 📍 Nether
 ?bancheck xqc               → 🔨 xqc — 3 bans | Last: 12/01/2024 | Reason: hateful conduct | Duration: 30 days
 ?botcheck suspiciousguy     → 🤖 #suspiciousguy: 1,840 viewers | 120 followers | ratio 15.33 | channel age: 14d | 🚨 SUSPICIOUS
 ?join xqc                   → also post in xQc's chat (owner only)

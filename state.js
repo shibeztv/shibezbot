@@ -21,6 +21,7 @@ const DEFAULTS = {
   notifyEnabled:    {},   // { channelName: true/false } (legacy, kept for compat)
   notifyEvents:     {},   // { channelName: { live: bool, offline: bool, category: bool } }
   notifyUsers:      {},   // { channelName: ["user1", "user2", ...] }
+  forsenAlertUsers: [],   // usernames subscribed to forsen MC speedrun alerts
 };
 
 function load() {

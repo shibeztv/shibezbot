@@ -267,6 +267,7 @@ const FORSENMC_POLL_MS    = 45_000;   // poll every 45s (site updates every 4s, 
 
 let forsenMcAlertFired    = false;    // true once we've alerted for this run
 let forsenMcLastGameSecs  = 0;        // last known game_time in seconds
+let forsenMcLatestData    = null;     // latest API response object
 
 function parseTimeToSecs(timeStr) {
   // Parses "HH:MM:SS.mmm" or "MM:SS.mmm" → total seconds
@@ -303,6 +304,7 @@ async function checkForsenMc() {
     // Handle both array response and single-object response
     const entry = Array.isArray(data) ? data[0] : data;
     if (!entry) return;
+    forsenMcLatestData = entry; // store for ?forsenrun
 
     // Accept either camelCase or snake_case field names
     const gameTimeStr = entry.gameTime || entry.game_time || entry.GameTime || "";
@@ -321,7 +323,11 @@ async function checkForsenMc() {
     if (!forsenMcAlertFired && gameSecs >= FORSENMC_THRESHOLD) {
       forsenMcAlertFired = true;
       const timeStr = formatRunTime(gameSecs);
-      const msg = `forsenE 🎯 Forsen is on a god run! Current time: ${timeStr} — catch it live: twitch.tv/forsen`;
+      const alertUsers = state.forsenAlertUsers || [];
+      const mentions = alertUsers.length > 0
+        ? alertUsers.map(u => `@${u}`).join(" ") + " "
+        : "";
+      const msg = `${mentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr} — catch it live: twitch.tv/forsen`;
       console.log(`🎮 [forsenmc] Firing alert: ${msg}`);
 
       // Broadcast to all post channels + manual channels
@@ -570,6 +576,8 @@ const ctx = {
   sayCooldowns,
   watchtime,
   botcheckCooldowns: {},
+  forsenMcLatestData: () => forsenMcLatestData,
+  isForsenLive: () => liveChannels.has("forsen"),
   addLearnChannel: (ch) => {
     if (!state.learnChannels.includes(ch)) state.learnChannels.push(ch);
   },
