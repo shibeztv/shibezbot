@@ -261,7 +261,7 @@ setInterval(updateLiveChannels, 2 * 60 * 1000);
 // Response example: { "gameTime": "00:11:32.400", "realTime": "00:12:01.200", ... }
 // NOTE: If the endpoint URL is slightly different, update FORSENMC_API_URL below.
 
-const FORSENMC_API_URL    = "https://forsenmc.piggeywig2000.dev/api/times/latest?streamer=forsen";
+const FORSENMC_API_URL    = "https://forsenmc.piggeywig2000.dev/api/time/latest?streamer=forsen";
 const FORSENMC_THRESHOLD  = 11 * 60;  // 11 minutes in seconds — alert when run reaches this
 const FORSENMC_POLL_MS    = 45_000;   // poll every 45s (site updates every 4s, no need to hammer)
 
