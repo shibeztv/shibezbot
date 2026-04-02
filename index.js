@@ -252,6 +252,95 @@ function isChannelLive(ch) {
 
 setInterval(updateLiveChannels, 2 * 60 * 1000);
 
+// ── Forsen MC speedrun alert ──────────────────────────────────────────────────
+// Polls the forsenmc tracker every 45s while forsen is live.
+// Fires a chat alert in all post + manual channels when his run hits 11 minutes.
+// Resets automatically when his timer drops back below the threshold (new run).
+//
+// API endpoint: GET https://forsenmc.piggeywig2000.dev/api/times/latest?streamer=forsen
+// Response example: { "gameTime": "00:11:32.400", "realTime": "00:12:01.200", ... }
+// NOTE: If the endpoint URL is slightly different, update FORSENMC_API_URL below.
+
+const FORSENMC_API_URL    = "https://forsenmc.piggeywig2000.dev/api/times/latest?streamer=forsen";
+const FORSENMC_THRESHOLD  = 11 * 60;  // 11 minutes in seconds — alert when run reaches this
+const FORSENMC_POLL_MS    = 45_000;   // poll every 45s (site updates every 4s, no need to hammer)
+
+let forsenMcAlertFired    = false;    // true once we've alerted for this run
+let forsenMcLastGameSecs  = 0;        // last known game_time in seconds
+
+function parseTimeToSecs(timeStr) {
+  // Parses "HH:MM:SS.mmm" or "MM:SS.mmm" → total seconds
+  if (!timeStr) return 0;
+  const parts = timeStr.split(":");
+  if (parts.length === 3) {
+    return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseFloat(parts[2]);
+  } else if (parts.length === 2) {
+    return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
+  }
+  return 0;
+}
+
+function formatRunTime(secs) {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+async function checkForsenMc() {
+  // Only poll when forsen is live
+  if (!liveChannels.has("forsen")) return;
+
+  try {
+    const res = await fetch(FORSENMC_API_URL, {
+      headers: { "User-Agent": "shibez-bot/1.0" },
+    });
+    if (!res.ok) {
+      console.warn(`🎮 [forsenmc] HTTP ${res.status} from API`);
+      return;
+    }
+    const data = await res.json();
+
+    // Handle both array response and single-object response
+    const entry = Array.isArray(data) ? data[0] : data;
+    if (!entry) return;
+
+    // Accept either camelCase or snake_case field names
+    const gameTimeStr = entry.gameTime || entry.game_time || entry.GameTime || "";
+    const gameSecs = parseTimeToSecs(gameTimeStr);
+
+    if (gameSecs === 0) return;
+
+    // Detect timer reset (new run started) — reset alert flag
+    if (gameSecs < forsenMcLastGameSecs - 30) {
+      console.log(`🎮 [forsenmc] Timer reset (${formatRunTime(forsenMcLastGameSecs)} → ${formatRunTime(gameSecs)}) — alert ready for next run.`);
+      forsenMcAlertFired = false;
+    }
+    forsenMcLastGameSecs = gameSecs;
+
+    // Fire alert when run crosses the threshold for the first time
+    if (!forsenMcAlertFired && gameSecs >= FORSENMC_THRESHOLD) {
+      forsenMcAlertFired = true;
+      const timeStr = formatRunTime(gameSecs);
+      const msg = `forsenE 🎯 Forsen is on a god run! Current time: ${timeStr} — catch it live: twitch.tv/forsen`;
+      console.log(`🎮 [forsenmc] Firing alert: ${msg}`);
+
+      // Broadcast to all post channels + manual channels
+      const targets = [
+        ...state.postChannels,
+        ...(state.manualChannels || []),
+      ];
+      for (const ch of [...new Set(targets)]) {
+        client.say(`#${ch}`, msg).catch(() => {});
+      }
+    }
+  } catch (e) {
+    console.warn(`🎮 [forsenmc] Poll error: ${e.message}`);
+  }
+}
+
+setInterval(checkForsenMc, FORSENMC_POLL_MS);
+
+
 // ── Per-channel message counters (for cooldown) ───────────────────────────────
 
 const msgCounters = {};
@@ -560,9 +649,20 @@ client.on("message", (channel, tags, message, self) => {
     return;
   }
 
-  // Owner can run commands from any channel the bot is in, even learn-only ones
+  // Command routing:
+  //   postChannels  → everyone can use commands
+  //   manualChannels → owner only (no public commands)
+  //   learnChannels  → owner only
   const isOwnerMsg = commands.isOwner(tags);
-  if (!isOwnerMsg && !state.postChannels.includes(ch) && !manualChannels.includes(ch) && !state.learnChannels.includes(ch)) return;
+  const inPostCh   = state.postChannels.includes(ch);
+  const inManualCh = manualChannels.includes(ch);
+  const inLearnCh  = state.learnChannels.includes(ch);
+
+  // Not in any known channel — ignore completely
+  if (!inPostCh && !inManualCh && !inLearnCh) return;
+
+  // In a manual or learn-only channel — only owner can run commands
+  if ((inManualCh || inLearnCh) && !inPostCh && !isOwnerMsg) return;
 
   const reply = commands.handle(channel, tags, message, ctx);
   if (reply) {
