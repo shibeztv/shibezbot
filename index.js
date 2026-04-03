@@ -440,13 +440,13 @@ function restartTimer(ch) {
 
 function postNow(channel) {
   const ch = channel.replace(/^#/, "");
-  if (markov.size < state.minCorpus) return null;
+  if (markov.size < state.minCorpus) return "corpus_small";
 
   if (!cooldownReady(ch)) {
     const needed    = getChannelCooldown(ch);
     const remaining = needed - (msgCounters[ch] || 0);
     console.log(`⏳  [${ts()}] #${ch}: cooldown — ${remaining} more message(s) needed.`);
-    return null;
+    return "cooldown";
   }
   // Try up to 5 times to get a message that passes the TOS filter.
   let msg = null;
@@ -459,7 +459,7 @@ function postNow(channel) {
   }
   if (!msg) {
     console.warn(`⚠️  [${ts()}] #${ch}: all candidates blocked by TOS filter, skipping.`);
-    return null;
+    return "filtered";
   }
   const target = channel.startsWith("#") ? channel : `#${channel}`;
   client.say(target, msg).catch(err =>
@@ -649,10 +649,13 @@ client.on("message", (channel, tags, message, self) => {
   // ── Owner ?say works from ANY channel the bot is in ─────────────────────
   if (commands.isOwner(tags) && message.trim().toLowerCase() === "?say") {
     const result = postNow(channel);
-    if (!result) {
-      client.say(channel,
-        `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`
-      ).catch(() => {});
+    if (typeof result === "string") {
+      const reasons = {
+        corpus_small: `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data.`,
+        cooldown: `⚠️ Cooldown active — need more chat messages before posting.`,
+        filtered: `⚠️ Couldn't generate a clean message — TOS filter blocked all candidates.`,
+      };
+      client.say(channel, reasons[result] || `⚠️ Could not post.`).catch(() => {});
     }
     return;
   }

@@ -74,7 +74,12 @@ function handle(channel, tags, message, ctx) {
 
     if (cmd === "say") {
       const result = postNow(channel);
-      if (!result) return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`;
+      if (typeof result === "string") {
+        if (result === "corpus_small") return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}).`;
+        if (result === "cooldown") return `⚠️ Cooldown active — need more chat messages between bot posts.`;
+        if (result === "filtered") return `⚠️ Couldn't generate a clean message right now.`;
+        return `⚠️ Could not post.`;
+      }
       return null;
     }
 
@@ -426,7 +431,12 @@ function handle(channel, tags, message, ctx) {
       ctx.sayCooldowns[user] = Date.now();
     }
     const result = postNow(channel);
-    if (!result) return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data or wait for chat.`;
+    if (typeof result === "string") {
+      if (result === "corpus_small") return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — need more chat messages.`;
+      if (result === "cooldown") return `⚠️ Cooldown active — need more chat messages between bot posts.`;
+      if (result === "filtered") return `⚠️ Couldn't generate a clean message right now.`;
+      return `⚠️ Could not post.`;
+    }
     return null;
   }
 
