@@ -968,10 +968,8 @@ function handle(channel, tags, message, ctx) {
         }
 
         const igtStr = fmtSecs(igtSecs);
-        const rtaStr = rtaSecs != null ? fmtSecs(rtaSecs) : null;
-        const realPart = rtaStr && rtaStr !== igtStr ? ` | Real: ${rtaStr}` : "";
 
-        client.say(replyTo, `@${user} 🎮 forsen MC — ⏱️ IGT: ${igtStr}${realPart}`).catch(() => {});
+        client.say(replyTo, `@${user} 🎮 forsen MC — ⏱️ IGT: ${igtStr}`).catch(() => {});
       } catch (e) {
         client.say(replyTo, `@${user} ⚠️ forsenrun lookup failed: ${e.message}`).catch(() => {});
       }
