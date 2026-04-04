@@ -949,49 +949,29 @@ function handle(channel, tags, message, ctx) {
         console.log("🎮 [forsenrun] entry keys:", Object.keys(entry).join(", "));
         console.log("🎮 [forsenrun] entry:", JSON.stringify(entry).slice(0, 400));
 
-        // Extract times — try every known field name variant
-        const gameTimeStr =
-          entry.gameTime || entry.game_time || entry.GameTime || entry.igt || entry.IGT ||
-          entry.time || entry.timer || entry.runTime || entry.run_time ||
-          (entry.data && (entry.data.gameTime || entry.data.game_time || entry.data.igt)) || "";
+        // igt and rta are plain seconds (e.g. 12.579)
+        const igtSecs = entry.igt != null ? parseFloat(entry.igt) : null;
+        const rtaSecs = entry.rta != null ? parseFloat(entry.rta) : null;
 
-        const realTimeStr =
-          entry.realTime || entry.real_time || entry.RealTime || entry.rta || entry.RTA ||
-          (entry.data && (entry.data.realTime || entry.data.real_time || entry.data.rta)) || "";
-
-        if (!gameTimeStr) {
-          return client.say(replyTo, `@${user} 🎮 No active run data — entry has: ${Object.keys(entry).join(", ")}`).catch(() => {});
+        if (igtSecs == null || igtSecs === 0) {
+          return client.say(replyTo, `@${user} 🎮 No active run — forsen might not be playing Minecraft right now.`).catch(() => {});
         }
 
-        function fmtTime(t) {
-          if (!t) return null;
-          const parts = String(t).split(":");
-          if (parts.length === 3) {
-            const h = parseInt(parts[0]);
-            const m = parseInt(parts[1]);
-            const s = Math.floor(parseFloat(parts[2]));
-            if (h > 0) return h + "h " + m + "m " + s + "s";
-            return m + "m " + s + "s";
-          } else if (parts.length === 2) {
-            const m = parseInt(parts[0]);
-            const s = Math.floor(parseFloat(parts[1]));
-            return m + "m " + s + "s";
-          }
-          return t;
+        function fmtSecs(s) {
+          const totalSecs = Math.floor(s);
+          const h = Math.floor(totalSecs / 3600);
+          const m = Math.floor((totalSecs % 3600) / 60);
+          const sec = totalSecs % 60;
+          if (h > 0) return `${h}h ${m}m ${sec}s`;
+          if (m > 0) return `${m}m ${sec}s`;
+          return `${sec}s`;
         }
 
-        const gameTime = fmtTime(gameTimeStr);
-        const realTime = fmtTime(realTimeStr);
+        const igtStr = fmtSecs(igtSecs);
+        const rtaStr = rtaSecs != null ? fmtSecs(rtaSecs) : null;
+        const realPart = rtaStr && rtaStr !== igtStr ? ` | Real: ${rtaStr}` : "";
 
-        const structure =
-          entry.currentSplit || entry.current_split || entry.split || entry.structure ||
-          entry.location || entry.dimension || entry.phase || entry.milestone ||
-          entry.category || null;
-
-        const structurePart = structure ? " | 📍 " + structure : "";
-        const realPart = realTime && realTime !== gameTime ? " | Real: " + realTime : "";
-
-        client.say(replyTo, `@${user} 🎮 forsen MC — ⏱️ IGT: ${gameTime}${realPart}${structurePart}`).catch(() => {});
+        client.say(replyTo, `@${user} 🎮 forsen MC — ⏱️ IGT: ${igtStr}${realPart}`).catch(() => {});
       } catch (e) {
         client.say(replyTo, `@${user} ⚠️ forsenrun lookup failed: ${e.message}`).catch(() => {});
       }

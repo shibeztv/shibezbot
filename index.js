@@ -356,11 +356,11 @@ async function checkForsenMc() {
     if (!entry) return;
     forsenMcLatestData = entry;
 
-    const gameTimeStr = extractGameTime(entry);
-    const gameSecs = parseTimeToSecs(gameTimeStr);
+    // igt is a plain number in seconds (e.g. 12.579)
+    const gameSecs = entry.igt != null ? parseFloat(entry.igt) : parseTimeToSecs(extractGameTime(entry));
 
-    if (gameSecs === 0) {
-      console.log(`🎮 [forsenmc] Timer is zero — no active run. Keys in entry: ${Object.keys(entry).join(", ")}`);
+    if (!gameSecs || gameSecs === 0) {
+      console.log(`🎮 [forsenmc] Timer is zero — no active run.`);
       return;
     }
 
