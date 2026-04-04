@@ -261,7 +261,7 @@ setInterval(updateLiveChannels, 2 * 60 * 1000);
 // Response example: { "gameTime": "00:11:32.400", "realTime": "00:12:01.200", ... }
 // NOTE: If the endpoint URL is slightly different, update FORSENMC_API_URL below.
 
-const FORSENMC_API_URL    = "https://forsenmc.piggeywig2000.dev/api/time/latest?streamer=forsen";
+// URL variants now defined inside checkForsenMc (see FORSENMC_URLS array)
 const FORSENMC_THRESHOLD  = 11 * 60;  // 11 minutes in seconds — alert when run reaches this
 const FORSENMC_POLL_MS    = 45_000;   // poll every 45s (site updates every 4s, no need to hammer)
 
@@ -287,30 +287,82 @@ function formatRunTime(secs) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// All known URL variants to try in order
+const FORSENMC_URLS = [
+  "https://forsenmc.piggeywig2000.dev/api/times/latest?streamer=forsen",
+  "https://forsenmc.piggeywig2000.dev/api/time/latest?streamer=forsen",
+  "https://forsenmc.piggeywig2000.dev/api/Times/latest?streamer=forsen",
+  "https://forsenmc.piggeywig2000.dev/api/times?streamer=forsen",
+];
+
+// Extract game_time from whatever shape the API response has
+function extractGameTime(entry) {
+  // Direct fields (camelCase, snake_case, PascalCase)
+  const direct = entry.gameTime || entry.game_time || entry.GameTime ||
+                 entry.time || entry.timer || entry.runTime || entry.run_time || "";
+  if (direct) return direct;
+  // Nested under a data/result wrapper
+  const nested = entry.data || entry.result || entry.payload;
+  if (nested && typeof nested === "object") {
+    return nested.gameTime || nested.game_time || nested.GameTime ||
+           nested.time || nested.timer || "";
+  }
+  return "";
+}
+
+function extractRealTime(entry) {
+  const direct = entry.realTime || entry.real_time || entry.RealTime || "";
+  if (direct) return direct;
+  const nested = entry.data || entry.result || entry.payload;
+  if (nested && typeof nested === "object") {
+    return nested.realTime || nested.real_time || nested.RealTime || "";
+  }
+  return "";
+}
+
 async function checkForsenMc() {
   // Only poll when forsen is live
   if (!liveChannels.has("forsen")) return;
 
   try {
-    const res = await fetch(FORSENMC_API_URL, {
-      headers: { "User-Agent": "shibez-bot/1.0" },
-    });
-    if (!res.ok) {
-      console.warn(`🎮 [forsenmc] HTTP ${res.status} from API`);
+    let data = null;
+    let usedUrl = "";
+
+    // Try each URL variant until one works
+    for (const url of FORSENMC_URLS) {
+      try {
+        const res = await fetch(url, { headers: { "User-Agent": "shibez-bot/1.0" } });
+        if (!res.ok) {
+          console.warn(`🎮 [forsenmc] HTTP ${res.status} from ${url}`);
+          continue;
+        }
+        const text = await res.text();
+        console.log(`🎮 [forsenmc] Raw response from ${url}: ${text.slice(0, 300)}`);
+        data = JSON.parse(text);
+        usedUrl = url;
+        break;
+      } catch (urlErr) {
+        console.warn(`🎮 [forsenmc] Failed ${url}: ${urlErr.message}`);
+      }
+    }
+
+    if (!data) {
+      console.warn("🎮 [forsenmc] All URL variants failed.");
       return;
     }
-    const data = await res.json();
 
-    // Handle both array response and single-object response
-    const entry = Array.isArray(data) ? data[0] : data;
+    // Handle array or single object
+    const entry = Array.isArray(data) ? data[data.length - 1] : data;
     if (!entry) return;
-    forsenMcLatestData = entry; // store for ?forsenrun
+    forsenMcLatestData = entry;
 
-    // Accept either camelCase or snake_case field names
-    const gameTimeStr = entry.gameTime || entry.game_time || entry.GameTime || "";
+    const gameTimeStr = extractGameTime(entry);
     const gameSecs = parseTimeToSecs(gameTimeStr);
 
-    if (gameSecs === 0) return;
+    if (gameSecs === 0) {
+      console.log(`🎮 [forsenmc] Timer is zero — no active run. Keys in entry: ${Object.keys(entry).join(", ")}`);
+      return;
+    }
 
     // Detect timer reset (new run started) — reset alert flag
     if (gameSecs < forsenMcLastGameSecs - 30) {
