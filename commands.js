@@ -73,7 +73,7 @@ function handle(channel, tags, message, ctx) {
     }
 
     if (cmd === "say") {
-      const result = postNow(channel);
+      const result = postNow(channel, true);
       if (typeof result === "string") {
         if (result === "corpus_small") return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}).`;
         if (result === "cooldown") return `⚠️ Cooldown active — need more chat messages between bot posts.`;
@@ -430,7 +430,7 @@ function handle(channel, tags, message, ctx) {
       }
       ctx.sayCooldowns[user] = Date.now();
     }
-    const result = postNow(channel);
+    const result = postNow(channel, true);
     if (typeof result === "string") {
       if (result === "corpus_small") return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — need more chat messages.`;
       if (result === "cooldown") return `⚠️ Cooldown active — need more chat messages between bot posts.`;

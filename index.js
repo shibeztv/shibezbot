@@ -490,11 +490,11 @@ function restartTimer(ch) {
 
 // ── Post a Markov message ─────────────────────────────────────────────────────
 
-function postNow(channel) {
+function postNow(channel, force = false) {
   const ch = channel.replace(/^#/, "");
   if (markov.size < state.minCorpus) return "corpus_small";
 
-  if (!cooldownReady(ch)) {
+  if (!force && !cooldownReady(ch)) {
     const needed    = getChannelCooldown(ch);
     const remaining = needed - (msgCounters[ch] || 0);
     console.log(`⏳  [${ts()}] #${ch}: cooldown — ${remaining} more message(s) needed.`);
@@ -700,7 +700,7 @@ client.on("message", (channel, tags, message, self) => {
 
   // ── Owner ?say works from ANY channel the bot is in ─────────────────────
   if (commands.isOwner(tags) && message.trim().toLowerCase() === "?say") {
-    const result = postNow(channel);
+    const result = postNow(channel, true);
     const errorReasons = {
       corpus_small: `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data.`,
       cooldown:     `⚠️ Cooldown active — need more chat messages before posting.`,
