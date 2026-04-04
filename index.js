@@ -289,8 +289,8 @@ function formatRunTime(secs) {
 
 // All known URL variants to try in order
 const FORSENMC_URLS = [
+  "https://forsenmc.piggeywig2000.dev/api/time/latest?streamer=forsen",   // confirmed working (from network tab)
   "https://forsenmc.piggeywig2000.dev/api/times/latest?streamer=forsen",
-  "https://forsenmc.piggeywig2000.dev/api/time/latest?streamer=forsen",
   "https://forsenmc.piggeywig2000.dev/api/Times/latest?streamer=forsen",
   "https://forsenmc.piggeywig2000.dev/api/times?streamer=forsen",
 ];

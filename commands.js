@@ -907,46 +907,96 @@ function handle(channel, tags, message, ctx) {
   }
 
   if (cmd === "forsenrun") {
-    const isLive = ctx.isForsenLive && ctx.isForsenLive();
-    if (!isLive) return "forsen is not live right now.";
-    const data = ctx.forsenMcLatestData && ctx.forsenMcLatestData();
-    if (!data) return "🎮 No run data yet — forsen might not be playing Minecraft.";
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
 
-    const gameTimeStr = data.gameTime || data.game_time || data.GameTime || "";
-    const realTimeStr = data.realTime || data.real_time || data.RealTime || "";
+    // Try to use cached data first (from the 45s poller), fall back to live fetch
+    Promise.resolve().then(async () => {
+      try {
+        // The working URL from network inspection (singular "time")
+        const URLS = [
+          "https://forsenmc.piggeywig2000.dev/api/time/latest?streamer=forsen",
+          "https://forsenmc.piggeywig2000.dev/api/times/latest?streamer=forsen",
+          "https://forsenmc.piggeywig2000.dev/api/Times/latest?streamer=forsen",
+        ];
 
-    if (!gameTimeStr) return "🎮 No active run data available.";
+        let entry = null;
 
-    function fmtTime(t) {
-      if (!t) return null;
-      const parts = t.split(":");
-      if (parts.length === 3) {
-        const h = parseInt(parts[0]);
-        const m = parseInt(parts[1]);
-        const s = Math.floor(parseFloat(parts[2]));
-        if (h > 0) return h + "h " + m + "m " + s + "s";
-        return m + "m " + s + "s";
-      } else if (parts.length === 2) {
-        const m = parseInt(parts[0]);
-        const s = Math.floor(parseFloat(parts[1]));
-        return m + "m " + s + "s";
+        // First try cached data from poller
+        if (ctx.forsenMcLatestData) {
+          entry = ctx.forsenMcLatestData();
+        }
+
+        // If no cache or cache is stale, fetch fresh
+        if (!entry) {
+          for (const url of URLS) {
+            try {
+              const res = await fetch(url, { headers: { "User-Agent": "shibez-bot/1.0" } });
+              if (!res.ok) continue;
+              const json = await res.json();
+              entry = Array.isArray(json) ? json[json.length - 1] : json;
+              if (entry) break;
+            } catch (_) { continue; }
+          }
+        }
+
+        if (!entry) {
+          return client.say(replyTo, `@${user} 🎮 No run data available — forsen might not be playing Minecraft.`).catch(() => {});
+        }
+
+        // Log the full entry so we can see the real field names
+        console.log("🎮 [forsenrun] entry keys:", Object.keys(entry).join(", "));
+        console.log("🎮 [forsenrun] entry:", JSON.stringify(entry).slice(0, 400));
+
+        // Extract times — try every known field name variant
+        const gameTimeStr =
+          entry.gameTime || entry.game_time || entry.GameTime || entry.igt || entry.IGT ||
+          entry.time || entry.timer || entry.runTime || entry.run_time ||
+          (entry.data && (entry.data.gameTime || entry.data.game_time || entry.data.igt)) || "";
+
+        const realTimeStr =
+          entry.realTime || entry.real_time || entry.RealTime || entry.rta || entry.RTA ||
+          (entry.data && (entry.data.realTime || entry.data.real_time || entry.data.rta)) || "";
+
+        if (!gameTimeStr) {
+          return client.say(replyTo, `@${user} 🎮 No active run data — entry has: ${Object.keys(entry).join(", ")}`).catch(() => {});
+        }
+
+        function fmtTime(t) {
+          if (!t) return null;
+          const parts = String(t).split(":");
+          if (parts.length === 3) {
+            const h = parseInt(parts[0]);
+            const m = parseInt(parts[1]);
+            const s = Math.floor(parseFloat(parts[2]));
+            if (h > 0) return h + "h " + m + "m " + s + "s";
+            return m + "m " + s + "s";
+          } else if (parts.length === 2) {
+            const m = parseInt(parts[0]);
+            const s = Math.floor(parseFloat(parts[1]));
+            return m + "m " + s + "s";
+          }
+          return t;
+        }
+
+        const gameTime = fmtTime(gameTimeStr);
+        const realTime = fmtTime(realTimeStr);
+
+        const structure =
+          entry.currentSplit || entry.current_split || entry.split || entry.structure ||
+          entry.location || entry.dimension || entry.phase || entry.milestone ||
+          entry.category || null;
+
+        const structurePart = structure ? " | 📍 " + structure : "";
+        const realPart = realTime && realTime !== gameTime ? " | Real: " + realTime : "";
+
+        client.say(replyTo, `@${user} 🎮 forsen MC — ⏱️ IGT: ${gameTime}${realPart}${structurePart}`).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ forsenrun lookup failed: ${e.message}`).catch(() => {});
       }
-      return t;
-    }
-
-    const gameTime = fmtTime(gameTimeStr);
-    const realTime = fmtTime(realTimeStr);
-
-    // Try to get structure/split info from API data
-    const structure =
-      data.currentSplit || data.current_split || data.split ||
-      data.structure || data.location || data.dimension ||
-      data.phase || data.milestone || null;
-
-    const structurePart = structure ? " | 📍 " + structure : "";
-    const realPart = realTime ? " | Real: " + realTime : "";
-
-    return "🎮 forsen MC run — ⏱️ " + gameTime + realPart + structurePart;
+    });
+    return null;
   }
 
   if (cmd === "bancheck") {
