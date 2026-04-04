@@ -701,13 +701,13 @@ client.on("message", (channel, tags, message, self) => {
   // ── Owner ?say works from ANY channel the bot is in ─────────────────────
   if (commands.isOwner(tags) && message.trim().toLowerCase() === "?say") {
     const result = postNow(channel);
-    if (typeof result === "string") {
-      const reasons = {
-        corpus_small: `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data.`,
-        cooldown: `⚠️ Cooldown active — need more chat messages before posting.`,
-        filtered: `⚠️ Couldn't generate a clean message — TOS filter blocked all candidates.`,
-      };
-      client.say(channel, reasons[result] || `⚠️ Could not post.`).catch(() => {});
+    const errorReasons = {
+      corpus_small: `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — add more seed data.`,
+      cooldown:     `⚠️ Cooldown active — need more chat messages before posting.`,
+      filtered:     `⚠️ Couldn't generate a clean message — TOS filter blocked all candidates.`,
+    };
+    if (result in errorReasons) {
+      client.say(channel, errorReasons[result]).catch(() => {});
     }
     return;
   }
