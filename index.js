@@ -267,6 +267,7 @@ const FORSENMC_POLL_MS    = 45_000;   // poll every 45s (site updates every 4s, 
 
 let forsenMcAlertFired    = false;    // true once we've alerted for this run
 let forsenMcLastGameSecs  = 0;        // last known game_time in seconds
+let forsenMcLastRunSecs   = 0;        // best/last completed run IGT in seconds
 let forsenMcLatestData    = null;     // latest API response object
 
 function parseTimeToSecs(timeStr) {
@@ -364,12 +365,14 @@ async function checkForsenMc() {
       return;
     }
 
-    // Detect timer reset (new run started) — reset alert flag
+    // Detect timer reset (new run started) — save last run and reset alert flag
     if (gameSecs < forsenMcLastGameSecs - 30) {
+      if (forsenMcLastGameSecs > 0) forsenMcLastRunSecs = forsenMcLastGameSecs;
       console.log(`🎮 [forsenmc] Timer reset (${formatRunTime(forsenMcLastGameSecs)} → ${formatRunTime(gameSecs)}) — alert ready for next run.`);
       forsenMcAlertFired = false;
     }
     forsenMcLastGameSecs = gameSecs;
+    if (gameSecs > 0) forsenMcLastRunSecs = gameSecs; // always track last known time
 
     // Fire alert when run crosses the threshold for the first time
     if (!forsenMcAlertFired && gameSecs >= FORSENMC_THRESHOLD) {
@@ -630,6 +633,8 @@ const ctx = {
   botcheckCooldowns: {},
   forsenMcLatestData: () => forsenMcLatestData,
   isForsenLive: () => liveChannels.has("forsen"),
+  isForsenPlayingMinecraft: () => (prevCategories["forsen"] || "").toLowerCase().includes("minecraft"),
+  getForsenLastRunSecs: () => forsenMcLastRunSecs,
   addLearnChannel: (ch) => {
     if (!state.learnChannels.includes(ch)) state.learnChannels.push(ch);
   },

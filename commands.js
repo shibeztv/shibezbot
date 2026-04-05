@@ -911,24 +911,45 @@ function handle(channel, tags, message, ctx) {
     const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
     const user = (tags.username || "").toLowerCase();
 
-    // Try to use cached data first (from the 45s poller), fall back to live fetch
+    const isLive        = ctx.isForsenLive && ctx.isForsenLive();
+    const isMinecraft   = ctx.isForsenPlayingMinecraft && ctx.isForsenPlayingMinecraft();
+    const lastRunSecs   = ctx.getForsenLastRunSecs ? ctx.getForsenLastRunSecs() : 0;
+
+    function fmtSecs(s) {
+      const totalSecs = Math.floor(s);
+      const h = Math.floor(totalSecs / 3600);
+      const m = Math.floor((totalSecs % 3600) / 60);
+      const sec = totalSecs % 60;
+      if (h > 0) return `${h}h ${m}m ${sec}s`;
+      if (m > 0) return `${m}m ${sec}s`;
+      return `${sec}s`;
+    }
+
+    const lastRunPart = lastRunSecs > 0
+      ? ` | Last run: ${fmtSecs(lastRunSecs)}`
+      : "";
+
+    // ── Case 1: forsen is offline ──────────────────────────────────────────
+    if (!isLive) {
+      return `@${user} forsenSleeper forsen is offline right now.${lastRunPart}`;
+    }
+
+    // ── Case 2: forsen is live but not playing Minecraft ─────────────────
+    if (!isMinecraft) {
+      return `@${user} forsenDank forsen is live but not speedrunning right now.${lastRunPart}`;
+    }
+
+    // ── Case 3: live + Minecraft — fetch current run data ─────────────────
     Promise.resolve().then(async () => {
       try {
-        // The working URL from network inspection (singular "time")
         const URLS = [
           "https://forsenmc.piggeywig2000.dev/api/time/latest?streamer=forsen",
           "https://forsenmc.piggeywig2000.dev/api/times/latest?streamer=forsen",
           "https://forsenmc.piggeywig2000.dev/api/Times/latest?streamer=forsen",
         ];
 
-        let entry = null;
+        let entry = ctx.forsenMcLatestData && ctx.forsenMcLatestData();
 
-        // First try cached data from poller
-        if (ctx.forsenMcLatestData) {
-          entry = ctx.forsenMcLatestData();
-        }
-
-        // If no cache or cache is stale, fetch fresh
         if (!entry) {
           for (const url of URLS) {
             try {
@@ -942,34 +963,27 @@ function handle(channel, tags, message, ctx) {
         }
 
         if (!entry) {
-          return client.say(replyTo, `@${user} 🎮 No run data available — forsen might not be playing Minecraft.`).catch(() => {});
+          return client.say(replyTo,
+            `@${user} forsenE forsen is playing Minecraft but no run timer detected yet.${lastRunPart}`
+          ).catch(() => {});
         }
 
-        // Log the full entry so we can see the real field names
-        console.log("🎮 [forsenrun] entry keys:", Object.keys(entry).join(", "));
-        console.log("🎮 [forsenrun] entry:", JSON.stringify(entry).slice(0, 400));
+        // igt field is seconds (e.g. 572.4) based on Railway logs
+        const igtSecs = entry.igt != null ? parseFloat(entry.igt) :
+                        entry.gameTime != null ? parseFloat(entry.gameTime) :
+                        entry.game_time != null ? parseFloat(entry.game_time) : null;
 
-        // igt and rta are plain seconds (e.g. 12.579)
-        const igtSecs = entry.igt != null ? parseFloat(entry.igt) : null;
-        const rtaSecs = entry.rta != null ? parseFloat(entry.rta) : null;
-
-        if (igtSecs == null || igtSecs === 0) {
-          return client.say(replyTo, `@${user} 🎮 No active run — forsen might not be playing Minecraft right now.`).catch(() => {});
-        }
-
-        function fmtSecs(s) {
-          const totalSecs = Math.floor(s);
-          const h = Math.floor(totalSecs / 3600);
-          const m = Math.floor((totalSecs % 3600) / 60);
-          const sec = totalSecs % 60;
-          if (h > 0) return `${h}h ${m}m ${sec}s`;
-          if (m > 0) return `${m}m ${sec}s`;
-          return `${sec}s`;
+        if (!igtSecs || igtSecs === 0) {
+          return client.say(replyTo,
+            `@${user} forsenE forsen is playing Minecraft — timer at 0 or not started yet.${lastRunPart}`
+          ).catch(() => {});
         }
 
         const igtStr = fmtSecs(igtSecs);
+        client.say(replyTo,
+          `@${user} 🎮 forsen MC — ⏱️ IGT: ${igtStr} | twitch.tv/forsen`
+        ).catch(() => {});
 
-        client.say(replyTo, `@${user} 🎮 forsen MC — ⏱️ IGT: ${igtStr}`).catch(() => {});
       } catch (e) {
         client.say(replyTo, `@${user} ⚠️ forsenrun lookup failed: ${e.message}`).catch(() => {});
       }
@@ -977,7 +991,7 @@ function handle(channel, tags, message, ctx) {
     return null;
   }
 
-  if (cmd === "bancheck") {
+    if (cmd === "bancheck") {
     const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
     if (!target) return `⚠️ Usage: ${PREFIX}bancheck <username>`;
     const { client } = ctx;
