@@ -374,8 +374,8 @@ async function checkForsenMc() {
     forsenMcLastGameSecs = gameSecs;
     if (gameSecs > 0) forsenMcLastRunSecs = gameSecs; // always track last known time
 
-    // Fire alert when run crosses the threshold for the first time
-    if (!forsenMcAlertFired && gameSecs >= FORSENMC_THRESHOLD) {
+    // Fire alert when run crosses 11min for the first time, but only if under 30min
+    if (!forsenMcAlertFired && gameSecs >= FORSENMC_THRESHOLD && gameSecs < 30 * 60) {
       forsenMcAlertFired = true;
       const timeStr = formatRunTime(gameSecs);
       const hint = "| type ?forsenalert to get notified!";
