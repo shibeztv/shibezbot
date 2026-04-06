@@ -39,7 +39,8 @@ All commands use the `?` prefix.
 | `?roll <sides>` | Roll a die — e.g. `?roll 20` rolls 1d20, `?roll 2d6` rolls two 6-sided dice |
 | `?choose <a> or <b>` | Bot picks one option randomly from a list separated by "or" |
 | `?coinflip` | Flip a coin |
-| `?forsenalert` | Subscribe/unsubscribe to forsen MC god run pings — bot @-mentions you when forsen hits a good run |
+| `?forsenalert` | Subscribe to forsen MC god run pings — bot @-mentions you when forsen hits a good run |
+| `?forsenalert off` | Unsubscribe from forsen MC god run pings |
 | `?forsenrun` | Show forsen's current Minecraft speedrun time and structure (only works when forsen is live) |
 | `?bancheck <user>` | Look up a user's ban history on betterbanned.com |
 | `?botcheck <channel>` | Check a live channel's viewer/follower ratio for bot activity |
@@ -82,7 +83,9 @@ Everything above, plus cross-channel control:
 
 | Command | What it does |
 |---|---|
-| `?join <channel>` | Join any channel and auto-post there |
+| `?forsenalert add <user> [channel]` | Add a user to forsen alert subscribers in a channel (defaults to current channel) |
+| `?forsenalert remove <user> [channel]` | Remove a user from forsen alert subscribers |
+| `?forsenalert list [channel]` | List all forsen alert subscribers in a channel |
 | `?leave <channel>` | Leave any post channel |
 | `?manual <channel>` | Join any channel in manual mode (no auto-posting) |
 | `?unmanual <channel>` | Leave any manual channel |
@@ -130,7 +133,13 @@ Everything above, plus cross-channel control:
 ?translate como estas       → @shlbez 🌐 how are you
 ?watchtime shlbez           → 👁️ shlbez has been watching #shlbez for 12h 30m.
 ?watchtime viewer1 shlbez   → 👁️ viewer1 has watched #shlbez for 5h 20m.
-?forsenalert             → forsenE You're subscribed to forsen MC god run alerts!
+?forsenalert             → forsenE You're subscribed to forsen MC god run alerts in #shlbez! Type ?forsenalert off to unsubscribe.
+?forsenalert off         → 🔕 Unsubscribed from forsen MC run alerts in #shlbez.
+?forsenalert add viewer1          → ✅ Added viewer1 to forsen alerts in #shlbez.
+?forsenalert add viewer1 jaskuz   → ✅ Added viewer1 to forsen alerts in #jaskuz.
+?forsenalert remove viewer1       → ✅ Removed viewer1 from forsen alerts in #shlbez.
+?forsenalert list                 → forsenE #shlbez alert subs (2): bolsogoat, viewer1
+?forsenalert list jaskuz          → forsenE #jaskuz alert subs (1): koljake
 ?forsenrun               → 🎮 forsen MC run — ⏱️ 9m 32s | Real: 10m 1s | 📍 Nether
 ?bancheck xqc               → 🔨 xqc — 3 bans | Last: 12/01/2024 | Reason: hateful conduct | Duration: 30 days
 ?botcheck suspiciousguy     → 🤖 #suspiciousguy: 1,840 viewers | 120 followers | ratio 15.33 | channel age: 14d | 🚨 SUSPICIOUS

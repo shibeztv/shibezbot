@@ -893,18 +893,59 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "forsenalert") {
     const user = (tags.username || "").toLowerCase();
+    const sub  = (args[0] || "").toLowerCase();
     if (!state.forsenAlertChannels) state.forsenAlertChannels = {};
     if (!state.forsenAlertChannels[ch]) state.forsenAlertChannels[ch] = [];
-    const list = state.forsenAlertChannels[ch];
-    const idx = list.indexOf(user);
-    if (idx === -1) {
-      list.push(user);
+
+    // Owner-only: ?forsenalert add <user> [channel]
+    if (sub === "add" && isOwner(tags)) {
+      const target  = (args[1] || "").toLowerCase().replace(/^@/, "").trim();
+      const targetCh = args[2] ? args[2].toLowerCase().replace(/^#/, "").trim() : ch;
+      if (!target) return `⚠️ Usage: ${PREFIX}forsenalert add <user> [channel]`;
+      if (!state.forsenAlertChannels[targetCh]) state.forsenAlertChannels[targetCh] = [];
+      if (state.forsenAlertChannels[targetCh].includes(target)) return `@${user} ${target} is already subscribed in #${targetCh}.`;
+      state.forsenAlertChannels[targetCh].push(target);
       saveState();
-      return `@${user} forsenE You're subscribed to forsen MC god run alerts in #${ch}!`;
-    } else {
+      return `@${user} ✅ Added ${target} to forsen alerts in #${targetCh}.`;
+    }
+
+    // Owner-only: ?forsenalert remove <user> [channel]
+    if (sub === "remove" && isOwner(tags)) {
+      const target   = (args[1] || "").toLowerCase().replace(/^@/, "").trim();
+      const targetCh = args[2] ? args[2].toLowerCase().replace(/^#/, "").trim() : ch;
+      if (!target) return `⚠️ Usage: ${PREFIX}forsenalert remove <user> [channel]`;
+      const list = state.forsenAlertChannels[targetCh] || [];
+      const idx  = list.indexOf(target);
+      if (idx === -1) return `@${user} ${target} is not subscribed in #${targetCh}.`;
+      list.splice(idx, 1);
+      saveState();
+      return `@${user} ✅ Removed ${target} from forsen alerts in #${targetCh}.`;
+    }
+
+    // Owner-only: ?forsenalert list [channel]
+    if (sub === "list" && isOwner(tags)) {
+      const targetCh = args[1] ? args[1].toLowerCase().replace(/^#/, "").trim() : ch;
+      const list = (state.forsenAlertChannels[targetCh] || []);
+      return `@${user} forsenE #${targetCh} alert subs (${list.length}): ${list.join(", ") || "(none)"}`;
+    }
+
+    const list = state.forsenAlertChannels[ch];
+    const idx  = list.indexOf(user);
+
+    if (sub === "off") {
+      if (idx === -1) return `@${user} You're not subscribed to forsen alerts in #${ch}.`;
       list.splice(idx, 1);
       saveState();
       return `@${user} 🔕 Unsubscribed from forsen MC run alerts in #${ch}.`;
+    }
+
+    // No arg or anything else = subscribe
+    if (idx === -1) {
+      list.push(user);
+      saveState();
+      return `@${user} forsenE You're subscribed to forsen MC god run alerts in #${ch}! Type ?forsenalert off to unsubscribe.`;
+    } else {
+      return `@${user} You're already subscribed in #${ch}. Type ?forsenalert off to unsubscribe.`;
     }
   }
 

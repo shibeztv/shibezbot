@@ -24,6 +24,7 @@ const DEFAULTS = {
   forsenAlertUsers:    [],  // LEGACY — migrated to forsenAlertChannels on first load
   forsenAlertChannels: {   // { channelName: ["user1", "user2", ...] }
     shlbez: ["bolsogoat"], // bolsogoat pre-subscribed to #shlbez alerts
+    jaskuz: ["koljake"],   // koljake pre-subscribed to #jaskuz alerts
   },
 };
 
@@ -50,6 +51,10 @@ function load() {
       if (!loaded.forsenAlertChannels.shlbez) loaded.forsenAlertChannels.shlbez = [];
       if (!loaded.forsenAlertChannels.shlbez.includes("bolsogoat")) {
         loaded.forsenAlertChannels.shlbez.push("bolsogoat");
+      }
+      if (!loaded.forsenAlertChannels.jaskuz) loaded.forsenAlertChannels.jaskuz = [];
+      if (!loaded.forsenAlertChannels.jaskuz.includes("koljake")) {
+        loaded.forsenAlertChannels.jaskuz.push("koljake");
       }
 
       return loaded;
