@@ -378,19 +378,21 @@ async function checkForsenMc() {
     if (!forsenMcAlertFired && gameSecs >= FORSENMC_THRESHOLD) {
       forsenMcAlertFired = true;
       const timeStr = formatRunTime(gameSecs);
-      const alertUsers = state.forsenAlertUsers || [];
-      const mentions = alertUsers.length > 0
-        ? alertUsers.map(u => `@${u}`).join(" ") + " "
-        : "";
-      const msg = `${mentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr} — catch it live: twitch.tv/forsen`;
-      console.log(`🎮 [forsenmc] Firing alert: ${msg}`);
+      const hint = "| type ?forsenalert to get notified!";
 
-      // Broadcast to all post channels + manual channels
-      const targets = [
-        ...state.postChannels,
-        ...(state.manualChannels || []),
-      ];
-      for (const ch of [...new Set(targets)]) {
+      // Broadcast to all post channels + manual channels, tagging only
+      // the users who subscribed in each specific channel
+      const targets = [...new Set([...state.postChannels, ...(state.manualChannels || [])])];
+      for (const ch of targets) {
+        const channelSubs = (state.forsenAlertChannels && state.forsenAlertChannels[ch]) || [];
+        const mentions = channelSubs.length > 0
+          ? channelSubs.map(u => `@${u}`).join(" ") + " "
+          : "";
+          const noLinks = ch === "xqc";
+        const msg = noLinks
+          ? `${mentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr} ${hint}`
+          : `${mentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr} — twitch.tv/forsen ${hint}`;
+        console.log(`🎮 [forsenmc] Firing alert in #${ch}: ${msg}`);
         client.say(`#${ch}`, msg).catch(() => {});
       }
     }
@@ -729,8 +731,10 @@ client.on("message", (channel, tags, message, self) => {
   // Not in any known channel — ignore completely
   if (!inPostCh && !inManualCh && !inLearnCh) return;
 
-  // In a manual or learn-only channel — only owner can run commands
-  if ((inManualCh || inLearnCh) && !inPostCh && !isOwnerMsg) return;
+  // In a manual or learn-only channel — only owner can run commands,
+  // EXCEPT ?forsenalert which is always open so anyone can subscribe from any channel.
+  const isForsenAlertCmd = message.trim().toLowerCase() === "?forsenalert";
+  if ((inManualCh || inLearnCh) && !inPostCh && !isOwnerMsg && !isForsenAlertCmd) return;
 
   const reply = commands.handle(channel, tags, message, ctx);
   if (reply) {

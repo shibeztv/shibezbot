@@ -21,14 +21,38 @@ const DEFAULTS = {
   notifyEnabled:    {},   // { channelName: true/false } (legacy, kept for compat)
   notifyEvents:     {},   // { channelName: { live: bool, offline: bool, category: bool } }
   notifyUsers:      {},   // { channelName: ["user1", "user2", ...] }
-  forsenAlertUsers: [],   // usernames subscribed to forsen MC speedrun alerts
+  forsenAlertUsers:    [],  // LEGACY — migrated to forsenAlertChannels on first load
+  forsenAlertChannels: {   // { channelName: ["user1", "user2", ...] }
+    shlbez: ["bolsogoat"], // bolsogoat pre-subscribed to #shlbez alerts
+  },
 };
 
 function load() {
   if (fs.existsSync(STATE_FILE)) {
     try {
       const raw = fs.readFileSync(STATE_FILE, "utf8");
-      return { ...DEFAULTS, ...JSON.parse(raw) };
+      const loaded = { ...DEFAULTS, ...JSON.parse(raw) };
+
+      // ── Migrate legacy forsenAlertUsers (flat array) → forsenAlertChannels ──
+      // If the saved file still has the old flat array and no channel map yet,
+      // move those users into the home channel so nobody loses their sub.
+      if (
+        Array.isArray(loaded.forsenAlertUsers) &&
+        loaded.forsenAlertUsers.length > 0 &&
+        (!loaded.forsenAlertChannels || Object.keys(loaded.forsenAlertChannels).length === 0)
+      ) {
+        const homeChannel = (process.env.CHANNEL || "shlbez").toLowerCase();
+        loaded.forsenAlertChannels = { [homeChannel]: [...loaded.forsenAlertUsers] };
+        console.log(`🔄  Migrated ${loaded.forsenAlertUsers.length} forsenAlertUsers → forsenAlertChannels[${homeChannel}]`);
+      }
+      // Ensure bolsogoat is always in shlbez (even after a wipe)
+      if (!loaded.forsenAlertChannels) loaded.forsenAlertChannels = {};
+      if (!loaded.forsenAlertChannels.shlbez) loaded.forsenAlertChannels.shlbez = [];
+      if (!loaded.forsenAlertChannels.shlbez.includes("bolsogoat")) {
+        loaded.forsenAlertChannels.shlbez.push("bolsogoat");
+      }
+
+      return loaded;
     } catch (e) {
       console.warn("⚠️  Could not parse bot_state.json, using defaults.");
     }

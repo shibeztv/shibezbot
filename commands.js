@@ -893,16 +893,18 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "forsenalert") {
     const user = (tags.username || "").toLowerCase();
-    if (!state.forsenAlertUsers) state.forsenAlertUsers = [];
-    const idx = state.forsenAlertUsers.indexOf(user);
+    if (!state.forsenAlertChannels) state.forsenAlertChannels = {};
+    if (!state.forsenAlertChannels[ch]) state.forsenAlertChannels[ch] = [];
+    const list = state.forsenAlertChannels[ch];
+    const idx = list.indexOf(user);
     if (idx === -1) {
-      state.forsenAlertUsers.push(user);
+      list.push(user);
       saveState();
-      return "@" + user + " forsenE You're subscribed to forsen MC god run alerts!";
+      return `@${user} forsenE You're subscribed to forsen MC god run alerts in #${ch}!`;
     } else {
-      state.forsenAlertUsers.splice(idx, 1);
+      list.splice(idx, 1);
       saveState();
-      return "@" + user + " 🔕 Unsubscribed from forsen MC run alerts.";
+      return `@${user} 🔕 Unsubscribed from forsen MC run alerts in #${ch}.`;
     }
   }
 
