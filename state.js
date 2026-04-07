@@ -25,6 +25,14 @@ const DEFAULTS = {
   forsenAlertChannels: {   // { channelName: ["user1", "user2", ...] }
     shlbez: ["bolsogoat"], // bolsogoat pre-subscribed to #shlbez alerts
     jaskuz: ["koljake"],   // koljake pre-subscribed to #jaskuz alerts
+    nymn: [                // nymn subscribers — whispered on alert, except @nymn who gets chat mention
+      "nymn",
+      "aztronat", "healonthesofa", "paktzu", "krappa", "4cdee", "tabbbik",
+      "onska01", "brunix126", "aw0led_", "toriwoo", "targaryenforsen",
+      "pgl_audio_guy_tf", "thinkicy", "thekomu", "andyleroi", "korespa",
+      "dkaspersky", "joggan", "patixxll", "cluyk", "mr_costa", "commusk",
+      "sasekiller", "dropkick52",
+    ],
   },
 };
 
@@ -56,6 +64,7 @@ function load() {
       if (!loaded.forsenAlertChannels.jaskuz.includes("koljake")) {
         loaded.forsenAlertChannels.jaskuz.push("koljake");
       }
+      if (!loaded.forsenAlertChannels.nymn) loaded.forsenAlertChannels.nymn = [];
 
       return loaded;
     } catch (e) {

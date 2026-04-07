@@ -261,7 +261,12 @@ setInterval(updateLiveChannels, 2 * 60 * 1000);
 // Response example: { "gameTime": "00:11:32.400", "realTime": "00:12:01.200", ... }
 // NOTE: If the endpoint URL is slightly different, update FORSENMC_API_URL below.
 
-// URL variants now defined inside checkForsenMc (see FORSENMC_URLS array)
+// Channels where subscribers get whispered instead of @mentioned in chat.
+// WHISPER_CHAT_MENTION defines which users in that channel still get a chat @mention
+// (everyone else gets a whisper). These are checked against the live subscriber list,
+// so if they unsubscribe via ?forsenalert off they stop getting mentioned too.
+const WHISPER_CHANNELS     = new Set(["nymn"]);
+const WHISPER_CHAT_MENTION = { nymn: ["nymn"] };
 const FORSENMC_THRESHOLD  = 11 * 60;  // 11 minutes in seconds — alert when run reaches this
 const FORSENMC_POLL_MS    = 45_000;   // poll every 45s (site updates every 4s, no need to hammer)
 
@@ -381,19 +386,35 @@ async function checkForsenMc() {
       const hint = "| type ?forsenalert to get notified!";
 
       // Broadcast to all post channels + manual channels, tagging only
-      // the users who subscribed in each specific channel
+      // the users who subscribed in each specific channel.
+      // For WHISPER_CHANNELS: whisper all subscribers except those in WHISPER_CHAT_MENTION.
       const targets = [...new Set([...state.postChannels, ...(state.manualChannels || [])])];
       for (const ch of targets) {
         const channelSubs = (state.forsenAlertChannels && state.forsenAlertChannels[ch]) || [];
-        const mentions = channelSubs.length > 0
-          ? channelSubs.map(u => `@${u}`).join(" ") + " "
-          : "";
-          const noLinks = ch === "xqc";
-        const msg = noLinks
-          ? `${mentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr} ${hint}`
-          : `${mentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr} — twitch.tv/forsen ${hint}`;
-        console.log(`🎮 [forsenmc] Firing alert in #${ch}: ${msg}`);
-        client.say(`#${ch}`, msg).catch(() => {});
+        const noLinks     = ch === "xqc";
+        const linkPart    = noLinks ? "" : " — twitch.tv/forsen";
+
+        if (WHISPER_CHANNELS.has(ch)) {
+          // Chat @mention only privileged users who are still subscribed
+          const chatUsers    = (WHISPER_CHAT_MENTION[ch] || []).filter(u => channelSubs.includes(u));
+          const chatMentions = chatUsers.length > 0 ? chatUsers.map(u => `@${u}`).join(" ") + " " : "";
+          const chatMsg      = `${chatMentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr}${linkPart} ${hint}`;
+          client.say(`#${ch}`, chatMsg).catch(() => {});
+
+          // Whisper everyone else
+          const whisperUsers = channelSubs.filter(u => !chatUsers.includes(u));
+          whisperUsers.forEach((u, i) => {
+            setTimeout(() => {
+              client.whisper(u, `forsenE 🎯 Forsen is on a god run! Current time: ${timeStr} — twitch.tv/forsen`).catch(() => {});
+            }, i * 600);
+          });
+          console.log(`🎮 [forsenmc] #${ch}: chat mention (${chatUsers.join(", ")}) + whispered ${whisperUsers.length} users.`);
+        } else {
+          const mentions = channelSubs.length > 0 ? channelSubs.map(u => `@${u}`).join(" ") + " " : "";
+          const msg      = `${mentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr}${linkPart} ${hint}`;
+          console.log(`🎮 [forsenmc] Firing alert in #${ch}: ${msg}`);
+          client.say(`#${ch}`, msg).catch(() => {});
+        }
       }
     }
   } catch (e) {
