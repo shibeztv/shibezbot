@@ -682,15 +682,15 @@ function handle(channel, tags, message, ctx) {
     return MONKA_LINES[Math.floor(Math.random() * MONKA_LINES.length)];
   }
 
-  if (cmd === "iq") {
+  if (cmd === "") {
     const target = (args[0] || tags.username || "").toLowerCase().replace(/^@/, "").trim();
     let hash = 0;
     for (let i = 0; i < target.length; i++) hash = (hash * 31 + target.charCodeAt(i)) >>> 0;
-    const iq = 50 + (hash % 101);
+    const  = 50 + (hash % 101);
     const label =
       iq >= 140 ? "you are literally forsen" :
-      iq >= 120 ? "pretty smart ngl" :
-      iq >= 100 ? "average chat member" :
+      iq >= 120 ? "almost Mensa certified." :
+      iq >= 100 ? "average chatter" :
       iq >= 80  ? "slightly below average Pepega" :
                   "Pepega Clap";
     return `🧠 ${target}'s IQ is ${iq} — ${label}`;
