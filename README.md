@@ -1,4 +1,4 @@
-# 🤖 Twitch Bot (Shibez_bot)
+# 🤖 Shibez_bot
 
 A Twitch bot that blends in as a viewer by posting Markov-generated chat messages,
 with a full live command system and fun other features!
