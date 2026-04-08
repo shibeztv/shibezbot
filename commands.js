@@ -688,7 +688,7 @@ function handle(channel, tags, message, ctx) {
     for (let i = 0; i < target.length; i++) hash = (hash * 31 + target.charCodeAt(i)) >>> 0;
     const iq = 50 + (hash % 101);
     const label =
-      iq >= 140 ? "galaxy brain 5Head" :
+      iq >= 140 ? "you are literally forsen" :
       iq >= 120 ? "pretty smart ngl" :
       iq >= 100 ? "average chat member" :
       iq >= 80  ? "slightly below average Pepega" :
