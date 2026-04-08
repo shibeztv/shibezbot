@@ -65,7 +65,7 @@ function handle(channel, tags, message, ctx) {
         `👑 Owner (?): ` +
         `say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | ` +
         `forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | ` +
-        `roll | choose | coinflip | bancheck | botcheck | forsenalert | forsenrun | lines | followage | top | status | commands | ` +
+        `roll | choose | coinflip | bancheck | botcheck | isbanned | isdown | logs | linecount | loseroftheday | lotw | lotm | loty | forsenalert | forsenrun | lines | followage | top | status | commands | ` +
         `notify | start | stop | interval | cooldown | minlines | onlineonly | greeter | ` +
         `join | leave | manual | unmanual | addlearn | removelearn | adduser | removeuser | users | ` +
         `channels | removeme`
@@ -719,7 +719,7 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "commands") {
     const user = (tags.username || "").toLowerCase();
-    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | lines | top | status | roll | choose | coinflip | forsenalert | forsenrun | bancheck | botcheck | notify | help`;
+    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | lines | top | status | roll | choose | coinflip | forsenalert | forsenrun | bancheck | botcheck | isbanned | isdown | logs | linecount | loseroftheday | lotd | lotw | lotm | loty | notify | help`;
   }
 
   if (cmd === "howtoadd") {
@@ -1126,6 +1126,150 @@ function handle(channel, tags, message, ctx) {
       }
     });
     return null;
+  }
+
+
+  // ── ?isbanned <username> ──────────────────────────────────────────────────
+  if (cmd === "isbanned") {
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}isbanned <username>`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        // A banned/suspended Twitch account returns 404 or empty data from /users
+        // A banned-from-channel user still exists globally — we can only check site bans
+        if (!helixGet) throw new Error("Twitch API not configured.");
+        const data = await helixGet(`users?login=${encodeURIComponent(target)}`);
+        if (!data.data || data.data.length === 0) {
+          return client.say(replyTo, `🔨 ${target} — account not found on Twitch (likely suspended/banned from the site).`).catch(() => {});
+        }
+        const u = data.data[0];
+        client.say(replyTo, `✅ ${u.display_name} — account is active on Twitch (not site-banned). Created: ${new Date(u.created_at).toLocaleDateString("en-GB")}`).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ isbanned lookup failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+  // ── ?isdown <url> ─────────────────────────────────────────────────────────
+  if (cmd === "isdown") {
+    const rawUrl = (args[0] || "").trim();
+    if (!rawUrl) return `⚠️ Usage: ${PREFIX}isdown <website or domain>`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        // Normalise — add https:// if no protocol given
+        const targetUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+        const domain = new URL(targetUrl).hostname;
+
+        // Use isitdown.rip API — free, no key needed
+        const res = await fetch(`https://isitdown.rip/api/v3/${encodeURIComponent(domain)}`, {
+          headers: { "User-Agent": "shibez-bot/1.0" }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        if (data.isitdown) {
+          client.say(replyTo, `@${user} 🔴 ${domain} appears to be DOWN for everyone.`).catch(() => {});
+        } else {
+          const responseTime = data.response_time ? ` | Response: ${data.response_time}ms` : "";
+          client.say(replyTo, `@${user} 🟢 ${domain} is UP${responseTime}`).catch(() => {});
+        }
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ isdown check failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+  // ── ?linecount [-global] [-alltime] [days:<n>] ────────────────────────────
+  if (cmd === "linecount") {
+    const user    = (tags.username || "").toLowerCase();
+    const msgStats = ctx.msgStats || {};
+    const isGlobal  = args.includes("-global");
+    const isAlltime = args.includes("-alltime");
+    const daysArg   = args.find(a => a.startsWith("days:"));
+    const days      = daysArg ? parseInt(daysArg.slice(5)) : null;
+
+    if (isGlobal) {
+      // Count across all tracked channels
+      let total = 0;
+      for (const chData of Object.values(msgStats)) {
+        const entry = chData[user];
+        if (!entry) continue;
+        if (isAlltime || (!daysArg)) {
+          total += entry.total;
+        } else if (days) {
+          const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
+          const cutoffStr = cutoff.toISOString().slice(0, 10);
+          total += entry.daily.filter(d => d.date >= cutoffStr).reduce((s, d) => s + d.count, 0);
+        }
+      }
+      const period = isAlltime ? "all time" : days ? `last ${days} days` : "all time";
+      return `📊 @${user} — ${total.toLocaleString()} messages globally (${period})`;
+    } else {
+      const entry = (msgStats[ch] || {})[user];
+      if (!entry) return `📊 @${user} — no messages recorded in #${ch} yet.`;
+      let count;
+      if (isAlltime || !daysArg) {
+        count = entry.total;
+      } else if (days) {
+        const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
+        const cutoffStr = cutoff.toISOString().slice(0, 10);
+        count = entry.daily.filter(d => d.date >= cutoffStr).reduce((s, d) => s + d.count, 0);
+      }
+      const period = isAlltime ? "all time" : days ? `last ${days} days` : "all time";
+      return `📊 @${user} — ${count.toLocaleString()} messages in #${ch} (${period})`;
+    }
+  }
+
+  // ── ?logs <channel> <user> ────────────────────────────────────────────────
+  if (cmd === "logs") {
+    const targetCh   = (args[0] || "").toLowerCase().replace(/^#/, "").trim();
+    const targetUser = (args[1] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!targetCh || !targetUser) return `⚠️ Usage: ${PREFIX}logs <channel> <user>`;
+    // Uses ZonianMidian's best-logs API + Supelle's frontend
+    const viewUrl = `https://logs.supelle.dev/${targetCh}/${targetUser}`;
+    return `📜 Logs for ${targetUser} in #${targetCh}: ${viewUrl}`;
+  }
+
+  // ── ?loseroftheday / ?lotw / ?lotm / ?loty ───────────────────────────────
+  if (cmd === "loseroftheday" || cmd === "lotd" || cmd === "lotw" || cmd === "lotm" || cmd === "loty") {
+    const msgStats = ctx.msgStats || {};
+    const chData   = msgStats[ch] || {};
+    const user     = (tags.username || "").toLowerCase();
+
+    let days, label;
+    if (cmd === "lotw") { days = 7;   label = "week"; }
+    else if (cmd === "lotm") { days = 30;  label = "month"; }
+    else if (cmd === "loty") { days = 365; label = "year"; }
+    else { days = 1; label = "day"; }  // loseroftheday / lotd
+
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+    // Sum messages per user within the period
+    const counts = {};
+    for (const [u, entry] of Object.entries(chData)) {
+      const total = entry.daily
+        .filter(d => d.date >= cutoffStr)
+        .reduce((s, d) => s + d.count, 0);
+      if (total > 0) counts[u] = total;
+    }
+
+    if (Object.keys(counts).length === 0) {
+      return `📊 No message data yet for #${ch} this ${label}.`;
+    }
+
+    const sorted  = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const [loser, count] = sorted[0];
+    const runnerUp = sorted[1] ? ` (2nd: ${sorted[1][0]} with ${sorted[1][1].toLocaleString()})` : "";
+    return `🗑️ Loser of the ${label} in #${ch}: ${loser} with ${count.toLocaleString()} messages${runnerUp}`;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

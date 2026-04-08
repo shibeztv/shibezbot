@@ -576,6 +576,47 @@ const recentViewers   = {};        // { channelName: { username: lastMsgTimestam
 let   watchtimeTick   = null;      // interval handle
 const USER_MSG_CAP = 150;
 
+// ── Message count tracking — for ?linecount and ?loseroftheday ────────────────
+// msgStats[channel][username] = { total: N, daily: [{date:"YYYY-MM-DD", count:N}, ...] }
+// "daily" keeps a rolling 365-day window; older entries are pruned periodically.
+const MSG_STATS_FILE = path.join(DATA_DIR || ".", "msg_stats.json");
+const msgStats = {};   // { channelName: { username: { total: N, daily: [{date,count}] } } }
+
+function loadMsgStats() {
+  try {
+    if (fs.existsSync(MSG_STATS_FILE)) {
+      const raw = JSON.parse(fs.readFileSync(MSG_STATS_FILE, "utf8"));
+      Object.assign(msgStats, raw);
+      console.log("📊  Message stats loaded.");
+    }
+  } catch (e) { console.warn("⚠️  Could not load msg_stats.json:", e.message); }
+}
+loadMsgStats();
+
+function recordMsg(ch, username) {
+  if (!msgStats[ch]) msgStats[ch] = {};
+  if (!msgStats[ch][username]) msgStats[ch][username] = { total: 0, daily: [] };
+  const entry = msgStats[ch][username];
+  entry.total++;
+
+  const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+  const last  = entry.daily[entry.daily.length - 1];
+  if (last && last.date === today) {
+    last.count++;
+  } else {
+    entry.daily.push({ date: today, count: 1 });
+    // Prune entries older than 365 days
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 365);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    entry.daily = entry.daily.filter(d => d.date >= cutoffStr);
+  }
+}
+
+// Save stats every 2 minutes
+setInterval(() => {
+  try { fs.writeFileSync(MSG_STATS_FILE, JSON.stringify(msgStats), "utf8"); } catch (e) {}
+}, 2 * 60_000);
+
 function learnMessage(username, message) {
   if (IGNORE_BOTS.includes(username.toLowerCase())) return;
   if (username.toLowerCase() === BOT_USERNAME.toLowerCase()) return;
@@ -653,6 +694,7 @@ const ctx = {
   reminders,
   sayCooldowns,
   watchtime,
+  msgStats,
   botcheckCooldowns: {},
   forsenMcLatestData: () => forsenMcLatestData,
   isForsenLive: () => liveChannels.has("forsen"),
@@ -691,6 +733,13 @@ client.on("message", (channel, tags, message, self) => {
 
   if (state.postChannels.includes(ch) || state.learnChannels.includes(ch)) {
     if (isChannelLive(ch)) learnMessage(username, message);
+  }
+
+  // Track message counts for ?linecount / ?loseroftheday (all channels, all users, always)
+  if (state.postChannels.includes(ch) || state.manualChannels.includes(ch) || state.learnChannels.includes(ch)) {
+    if (!IGNORE_BOTS.includes(username) && username !== BOT_USERNAME.toLowerCase()) {
+      recordMsg(ch, username);
+    }
   }
 
   // Track recent viewers for watchtime
