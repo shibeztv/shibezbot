@@ -719,7 +719,7 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "commands") {
     const user = (tags.username || "").toLowerCase();
-    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | lines | top | status | roll | choose | coinflip | forsenalert | forsenrun | bancheck | botcheck | ping | quote | offliners | logs | linecount | loseroftheday | lastline | firstline | lastseen | isdown | stock | crypto | user | isbanned | founders | namecheck | randomclip | notify | help`;
+    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | roll | choose | coinflip | forsenalert | forsenrun | bancheck | botcheck | ping | quote | offliners | logs | linecount | loseroftheday | lastline | firstline | lastseen | isdown | stock | crypto | user | isbanned | founders | namecheck | randomclip | notify | lines | top | status | help`;
   }
 
   if (cmd === "howtoadd") {
@@ -974,12 +974,23 @@ function handle(channel, tags, message, ctx) {
 
     // ── Case 1: forsen is offline ──────────────────────────────────────────
     if (!isLive) {
+      // Check if it's between 16:30 and 22:00 CEST (UTC+2 in summer, UTC+1 in winter)
+      // Use UTC+2 as forsen's typical streaming timezone (CEST)
+      const nowUtc    = new Date();
+      const cestOffset = 2 * 60; // CEST = UTC+2 (covers most of forsen's streaming season)
+      const cestMins  = (nowUtc.getUTCHours() * 60 + nowUtc.getUTCMinutes() + cestOffset) % (24 * 60);
+      const streamWindow = cestMins >= (16 * 60 + 30) && cestMins < (22 * 60);
+      if (streamWindow) {
+        return `@${user} forsenSleeper Forsen is taking today off.${lastRunPart}`;
+      }
       return `@${user} forsenSleeper forsen is offline right now.${lastRunPart}`;
     }
 
     // ── Case 2: forsen is live but not playing Minecraft ─────────────────
     if (!isMinecraft) {
-      return `@${user} forsenDank forsen is live but not speedrunning right now.${lastRunPart}`;
+      const currentCategory = ctx.getForsenCategory ? ctx.getForsenCategory() : null;
+      const categoryPart    = currentCategory ? ` instead he is playing ${currentCategory}` : "";
+      return `@${user} forsenDank forsen is not speedrunning Minecraft today,${categoryPart}.${lastRunPart}`;
     }
 
     // ── Case 3: live + Minecraft — fetch current run data ─────────────────
@@ -1168,7 +1179,7 @@ function handle(channel, tags, message, ctx) {
   // ?offliners — link to y_exp's offliners site
   if (cmd === "offliners") {
     const user = (tags.username || "").toLowerCase();
-    return `@${user} 💤 Offliners for #${ch}: https://twitch.yexp.dev/offliners/${ch}`;
+    return `@${user} 💤 Offliners: https://twitch.yexp.dev/offliners/`;
   }
 
   // ?logs <channel> <user> — best-logs link via ZonianMidian + Supelle's frontend
@@ -1215,28 +1226,30 @@ function handle(channel, tags, message, ctx) {
     entries.sort((a, b) => b[1] - a[1]);
     const [winner, count] = entries[0];
     const top3 = entries.slice(0, 3).map(([u, n], i) => `${i + 1}. ${u} (${n.toLocaleString()})`).join(" | ");
-    return `@${user} 🥔 Loser of the ${isDaily ? "day" : "week/month/year (all-time)"} in #${ch}: @${winner} (${count.toLocaleString()} msgs ${label}) — ${top3}`;
+    return `@${user} OMEGALUL Loser of the ${isDaily ? "day" : "week/month/year (all-time)"} in #${ch}: @${winner} (${count.toLocaleString()} msgs ${label}) — ${top3}`;
   }
 
-  // ?lastline <user>
+  // ?lastline <user> [channel]
   if (cmd === "lastline") {
-    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
-    if (!target) return `⚠️ Usage: ${PREFIX}lastline <user>`;
-    const user = (tags.username || "").toLowerCase();
-    const last = ctx.lastMessage?.[ch]?.[target];
-    if (!last) return `@${user} 🔍 No messages from ${target} recorded in #${ch} this session.`;
-    return `@${user} 💬 ${target}'s last line in #${ch}: "${last}"`;
+    const target   = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}lastline <user> [channel]`;
+    const user     = (tags.username || "").toLowerCase();
+    const targetCh = args[1] ? args[1].replace(/^#/, "").toLowerCase().trim() : ch;
+    const last     = ctx.lastMessage?.[targetCh]?.[target];
+    if (!last) return `@${user} 🔍 No messages from ${target} recorded in #${targetCh} this session.`;
+    return `@${user} 💬 ${target}'s last line in #${targetCh}: "${last}"`;
   }
 
-  // ?firstline <user>
+  // ?firstline <user> [channel]
   if (cmd === "firstline") {
-    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
-    if (!target) return `⚠️ Usage: ${PREFIX}firstline <user>`;
-    const user  = (tags.username || "").toLowerCase();
-    const first = ctx.firstline?.[ch]?.[target];
-    if (!first) return `@${user} 🔍 No first-message data for ${target} in #${ch}.`;
+    const target   = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}firstline <user> [channel]`;
+    const user     = (tags.username || "").toLowerCase();
+    const targetCh = args[1] ? args[1].replace(/^#/, "").toLowerCase().trim() : ch;
+    const first    = ctx.firstline?.[targetCh]?.[target];
+    if (!first) return `@${user} 🔍 No first-message data for ${target} in #${targetCh}.`;
     const when = new Date(first.at).toLocaleDateString("en-GB");
-    return `@${user} 💬 ${target}'s first line in #${ch} (${when}): "${first.text}"`;
+    return `@${user} 💬 ${target}'s first line in #${targetCh} (${when}): "${first.text}"`;
   }
 
   // ?lastseen <user>
@@ -1309,29 +1322,24 @@ function handle(channel, tags, message, ctx) {
 
   // ?crypto <symbol>
   if (cmd === "crypto") {
-    const symbol = (args[0] || "").toLowerCase().trim();
+    const symbol = (args[0] || "").toUpperCase().trim();
     if (!symbol) return `⚠️ Usage: ${PREFIX}crypto <symbol> (e.g. ?crypto BTC)`;
     const { client } = ctx;
     const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
     const user = (tags.username || "").toLowerCase();
     Promise.resolve().then(async () => {
       try {
-        const sRes = await fetch(
-          `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`,
+        const res  = await fetch(
+          `https://min-api.cryptocompare.com/data/pricemultifull?fsyms=${encodeURIComponent(symbol)}&tsyms=USD`,
           { headers: { "User-Agent": "shibez-bot/1.0" } }
         );
-        const coin = (await sRes.json())?.coins?.[0];
-        if (!coin) return client.say(replyTo, `@${user} ⚠️ Crypto "${symbol.toUpperCase()}" not found.`).catch(() => {});
-        const pRes = await fetch(
-          `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(coin.id)}&vs_currencies=usd&include_24hr_change=true`,
-          { headers: { "User-Agent": "shibez-bot/1.0" } }
-        );
-        const cd = (await pRes.json())[coin.id];
-        if (!cd) return client.say(replyTo, `@${user} ⚠️ Couldn't fetch price for ${coin.name}.`).catch(() => {});
-        const chg  = cd.usd_24h_change ?? 0;
+        const data = await res.json();
+        const raw  = data?.RAW?.[symbol]?.USD;
+        if (!raw) return client.say(replyTo, `@${user} ⚠️ Crypto "${symbol}" not found.`).catch(() => {});
+        const chg  = raw.CHANGEPCT24HOUR ?? 0;
         const sign = chg >= 0 ? "+" : "";
         client.say(replyTo,
-          `@${user} ${chg >= 0 ? "📈" : "📉"} ${coin.name} (${coin.symbol.toUpperCase()}) | $${cd.usd.toLocaleString("en-US")} USD | ${sign}${chg.toFixed(2)}% (24h)`
+          `@${user} ${chg >= 0 ? "📈" : "📉"} ${symbol} | $${raw.PRICE.toLocaleString("en-US", { maximumFractionDigits: 6 })} USD | ${sign}${chg.toFixed(2)}% (24h)`
         ).catch(() => {});
       } catch (e) {
         client.say(replyTo, `@${user} ⚠️ Crypto lookup failed: ${e.message}`).catch(() => {});
@@ -1398,7 +1406,12 @@ function handle(channel, tags, message, ctx) {
           return client.say(replyTo, `@${user} 🔍 "${target}" — not found (may be suspended or never existed).`).catch(() => {});
         }
         if (u.banned) {
-          return client.say(replyTo, `@${user} 🔨 ${u.displayName} IS currently banned/suspended from Twitch.`).catch(() => {});
+          const since   = u.bannedAt   ? ` since ${new Date(u.bannedAt).toLocaleDateString("en-GB")}` : "";
+          const reason  = u.banReason  ? ` | Reason: ${u.banReason}` : " | Reason: not publicly available";
+          const expires = u.banExpires ? ` | Expires: ${new Date(u.banExpires).toLocaleDateString("en-GB")}` : " | Duration: permanent";
+          return client.say(replyTo,
+            `@${user} 🔨 ${u.displayName} IS suspended from Twitch${since}${reason}${expires}`
+          ).catch(() => {});
         }
         client.say(replyTo, `@${user} ✅ ${u.displayName} is NOT banned from Twitch.`).catch(() => {});
       } catch (e) {
@@ -1427,9 +1440,21 @@ function handle(channel, tags, message, ctx) {
         const data     = await res.json();
         const founders = Array.isArray(data) ? data : (data?.founders ?? data?.data ?? []);
         if (!founders.length) return client.say(replyTo, `@${user} 🏅 No founders found for #${targetCh}.`).catch(() => {});
-        const names = founders.slice(0, 10).map(f => f.login || f.displayName || "?").join(", ");
-        const more  = founders.length > 10 ? ` (+${founders.length - 10} more)` : "";
-        client.say(replyTo, `@${user} 🏅 Founders of #${targetCh} (${founders.length}): ${names}${more}`).catch(() => {});
+        const names = founders.map(f => f.login || f.displayName || "?");
+        // Split into chunks of 20 names to stay well under 500 char limit
+        const CHUNK = 20;
+        for (let i = 0; i < names.length; i += CHUNK) {
+          const slice    = names.slice(i, i + CHUNK);
+          const isFirst  = i === 0;
+          const part     = Math.floor(i / CHUNK) + 1;
+          const total    = Math.ceil(names.length / CHUNK);
+          const prefix   = isFirst
+            ? `@${user} 🏅 Founders of #${targetCh} (${names.length})${total > 1 ? ` [${part}/${total}]` : ""}: `
+            : `🏅 [${part}/${total}]: `;
+          setTimeout(() => {
+            client.say(replyTo, (prefix + slice.join(", ")).slice(0, 499)).catch(() => {});
+          }, i / CHUNK * 600);
+        }
       } catch (e) {
         client.say(replyTo, `@${user} ⚠️ Founders lookup failed: ${e.message}`).catch(() => {});
       }
@@ -1450,14 +1475,26 @@ function handle(channel, tags, message, ctx) {
     Promise.resolve().then(async () => {
       try {
         const data = await helixGet(`users?login=${encodeURIComponent(target)}`);
-        if (!data.data?.length) {
-          client.say(replyTo, `@${user} ✅ "${target}" appears to be available on Twitch!`).catch(() => {});
-        } else {
+        if (data.data?.length) {
+          // Account exists and is active
           const u = data.data[0];
-          client.say(replyTo,
+          return client.say(replyTo,
             `@${user} ❌ "${target}" is taken — registered to ${u.display_name} (created ${new Date(u.created_at).toLocaleDateString("en-GB")}).`
           ).catch(() => {});
         }
+        // Helix returns nothing for suspended accounts too — cross-check with IVR
+        const ivrRes  = await fetch(`https://api.ivr.fi/v2/twitch/user?login=${encodeURIComponent(target)}`, {
+          headers: { "User-Agent": "shibez-bot/1.0" },
+        });
+        const ivrData = await ivrRes.json();
+        const u = Array.isArray(ivrData) ? ivrData[0] : (ivrData?.data?.[0] ?? ivrData);
+        if (u?.login) {
+          // Account exists but is suspended — name is NOT available
+          return client.say(replyTo,
+            `@${user} ❌ "${target}" is not available — account exists but is currently suspended.`
+          ).catch(() => {});
+        }
+        client.say(replyTo, `@${user} ✅ "${target}" appears to be available on Twitch!`).catch(() => {});
       } catch (e) {
         client.say(replyTo, `@${user} ⚠️ Name check failed: ${e.message}`).catch(() => {});
       }

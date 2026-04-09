@@ -56,21 +56,21 @@ All commands use the `?` prefix.
 | `?notify list` | Show subscriber counts for each notification type |
 | `?ping` | Bot status: uptime, memory, channels, corpus size |
 | `?quote` | Get today's motivational quote |
-| `?offliners` | Link to y_exp's Offliners site for this channel |
+| `?offliners` | Link to y_exp's Offliners site |
 | `?logs <channel> <user>` | Get a link to chatlogs for a channel/user pair (ZonianMidian's best-logs + Supelle's frontend) |
 | `?linecount [user] [-global] [days:1]` | Show how many messages a user has sent in this channel or globally |
 | `?loseroftheday` | Top chatter today in this channel |
-| `?lotw` / `?lotm` / `?loty` | Top chatter all-time (weekly/monthly/yearly not separately tracked) |
-| `?lastline <user>` | Last message a user sent in this channel (current session) |
-| `?firstline <user>` | First message a user ever sent in this channel (tracked since bot joined) |
+| `?lotw` / `?lotm` / `?loty` | Top chatter all-time (weekly/monthly/yearly aliases, uses all-time data) |
+| `?lastline <user> [channel]` | Last message a user sent in a channel (current session) |
+| `?firstline <user> [channel]` | First message a user ever sent in a channel (tracked since bot joined) |
 | `?lastseen <user>` | When and where a user was last seen |
 | `?isdown <domain>` | Check if a website is up or down |
 | `?stock <ticker>` | Current stock price and daily change (e.g. `?stock AAPL`) |
 | `?crypto <symbol>` | Current crypto price and 24h change (e.g. `?crypto BTC`) |
 | `?user [username]` | Twitch user info — creation date, followers, last live, partner status |
-| `?isbanned <username>` | Check if a Twitch account is banned/suspended |
+| `?isbanned <username>` | Check if a Twitch account is banned/suspended, with reason and duration if available |
 | `?founders <channel>` | List the founders of a channel (requires broadcaster auth — may be unavailable) |
-| `?namecheck <username>` | Check if a Twitch username is available to register |
+| `?namecheck <username>` | Check if a Twitch username is available (also catches suspended accounts) |
 | `?randomclip <channel> [game:<game>] [-day\|-week\|-month\|-year]` | Get a random clip from a channel |
 
 ---
@@ -160,22 +160,25 @@ Everything above, plus cross-channel control:
 ?forsenalert list jaskuz          → forsenE #jaskuz alert subs (1): koljake
 ?ping                   → 🏓 Pong! ● Uptime: 9h 14m ● Channels: 5 ● Memory: 82.3MB ● Corpus: 50,000 lines
 ?quote                  → 💬 "The only way to do great work is to love what you do." — Steve Jobs
-?offliners              → 💤 Offliners for #shlbez: https://twitch.yexp.dev/offliners/shlbez
+?offliners              → 💤 Offliners: https://twitch.yexp.dev/offliners/
 ?logs shlbez xqc        → 📋 Logs for @xqc in #shlbez: https://logs.zonian.dev/rdr/shlbez/xqc?pretty=true
 ?linecount              → 📊 shlbez — 4,201 messages in #shlbez (all-time).
 ?linecount viewer1 -global → 📊 viewer1 — 12,500 messages tracked globally.
 ?linecount days:1       → 📊 shlbez — 42 messages in #shlbez today.
-?loseroftheday          → 🥔 Loser of the day in #shlbez: @viewer1 (412 msgs today) — 1. viewer1 (412) | 2. viewer2 (301) | 3. viewer3 (188)
-?lastline viewer1       → 💬 viewer1's last line in #shlbez: "this run is insane bro"
-?firstline viewer1      → 💬 viewer1's first line in #shlbez (01/01/2024): "hello chat"
+?loseroftheday          → OMEGALUL Loser of the day in #shlbez: @viewer1 (412 msgs today) — 1. viewer1 (412) | 2. viewer2 (301) | 3. viewer3 (188)
+?lastline viewer1           → 💬 viewer1's last line in #shlbez: "this run is insane bro"
+?lastline viewer1 forsen    → 💬 viewer1's last line in #forsen: "monkaS"
+?firstline viewer1          → 💬 viewer1's first line in #shlbez (01/01/2024): "hello chat"
+?firstline viewer1 nymn     → 💬 viewer1's first line in #nymn (03/11/2023): "hi nymn"
 ?lastseen viewer1       → 👁️ viewer1 was last seen in #shlbez 3h ago.
 ?isdown twitch.tv       → 🌐 twitch.tv — ✅ UP | Status: 200 | Response time: 142ms
 ?stock AAPL             → 📈 Apple Inc. (AAPL) | 204.10 USD | +2.38 (+1.18%)
-?crypto BTC             → 📈 Bitcoin (BTC) | $65,432 USD | +2.50% (24h)
+?crypto BTC             → 📈 BTC | $65,432 USD | +2.50% (24h)
 ?user xqc               → 👤 xQc (xqc) | ID: 71092938 | Created: 12/01/2018 | Followers: 11,200,000 | Last live: 07/04/2026 | Partner
-?isbanned someguy       → 🔨 someguy IS currently banned/suspended from Twitch.
+?isbanned someguy       → 🔨 someguy IS suspended from Twitch since 01/01/2023 | Reason: not publicly available | Duration: permanent
 ?namecheck coolname     → ✅ "coolname" appears to be available on Twitch!
 ?namecheck xqc          → ❌ "xqc" is taken — registered to xQc (created 12/01/2018).
+?namecheck shibez       → ❌ "shibez" is not available — account exists but is currently suspended.
 ?founders shlbez        → 🏅 Founders of #shlbez (3): viewer1, viewer2, viewer3
 ?randomclip forsen      → 🎬 "insane speedrun moment" by clipperguy (4,201 views) | https://clips.twitch.tv/...
 ?randomclip forsen -week → 🎬 Random clip from the last week

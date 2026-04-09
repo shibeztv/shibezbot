@@ -730,6 +730,7 @@ const ctx = {
   isForsenLive: () => liveChannels.has("forsen"),
   isForsenPlayingMinecraft: () => (prevCategories["forsen"] || "").toLowerCase().includes("minecraft"),
   getForsenLastRunSecs: () => forsenMcLastRunSecs,
+  getForsenCategory: () => prevCategories["forsen"] || null,
   addLearnChannel: (ch) => {
     if (!state.learnChannels.includes(ch)) state.learnChannels.push(ch);
   },
