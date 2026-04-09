@@ -42,7 +42,7 @@ All commands use the `?` prefix.
 | `?forsenalert` | Subscribe to forsen MC god run pings — bot @-mentions you when forsen hits a good run |
 | `?forsenalert off` | Unsubscribe from forsen MC god run pings |
 | `?forsenrun` | Show forsen's current Minecraft speedrun time and structure (only works when forsen is live) |
-| `?bancheck <user>` | Look up a user's ban history on betterbanned.com |
+| `?bancheck <user>` | Look up a user's ban history — shows full details if available, or flags as likely banned if the lookup is blocked |
 | `?botcheck <channel>` | Check a live channel's viewer/follower ratio for bot activity |
 | `?lines` | Show current corpus line count |
 | `?followage <user>` | Show how long a user has been following this channel |
@@ -192,6 +192,7 @@ Everything above, plus cross-channel control:
 ?ra                     → forsenE
 ?forsenrun               → 🎮 forsen MC run — ⏱️ 9m 32s | Real: 10m 1s | 📍 Nether
 ?bancheck xqc               → 🔨 xqc — 3 bans | Last: 12/01/2024 | Reason: hateful conduct | Duration: 30 days
+?bancheck bannedguy         → 🔨 bannedguy — account is likely banned/suspended. Check: betterbanned.com/en/streamer/bannedguy
 ?botcheck suspiciousguy     → 🤖 #suspiciousguy: 1,840 viewers | 120 followers | ratio 15.33 | channel age: 14d | 🚨 SUSPICIOUS
 ?join xqc                   → also post in xQc's chat (owner only)
 ?addlearn hasanabi          → learn from hasanabi's chat silently (owner only)

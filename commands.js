@@ -1052,21 +1052,36 @@ function handle(channel, tags, message, ctx) {
     const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
     Promise.resolve().then(async () => {
       try {
-        // Check if the user is a Twitch partner (if API keys available)
-        let isPartner = false;
+        // Step 1: Check Twitch API — if user exists they're not banned
+        let userExists = false;
+        let isPartner  = false;
         if (helixGet) {
           try {
             const userData = await helixGet(`users?login=${encodeURIComponent(target)}`);
             const userInfo = userData?.data?.[0];
-            isPartner = userInfo?.broadcaster_type === "partner";
+            if (userInfo) {
+              userExists = true;
+              isPartner  = userInfo.broadcaster_type === "partner";
+            }
           } catch (_) {}
         }
 
+        // Step 2: If user not found on Twitch → likely banned
+        // Try betterbanned for details, fall back to simple "is banned" message
+        if (!userExists && helixGet) {
+          try {
+            await checkBetterBanned(target, replyTo, client);
+          } catch (_) {
+            // betterbanned failed — just say they're banned
+            client.say(replyTo, `🔨 ${target} — account appears to be banned on Twitch.`).catch(() => {});
+          }
+          return;
+        }
+
+        // Step 3: User exists — look up ban history normally
         if (isPartner) {
-          // Partners → scrape streamerbans.com which has historical data
           await checkStreamerBans(target, replyTo, client);
         } else {
-          // Affiliates and others → use betterbanned.com API
           await checkBetterBanned(target, replyTo, client);
         }
       } catch (e) {
