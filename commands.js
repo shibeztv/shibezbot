@@ -1565,31 +1565,76 @@ function handle(channel, tags, message, ctx) {
     const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
     const user = (tags.username || "").toLowerCase();
     Promise.resolve().then(async () => {
-      try {
-        // Trump's Truth Social account ID (Mastodon-compatible public API, no auth needed)
-        const res  = await fetch(
-          "https://truthsocial.com/api/v1/accounts/107780257626128497/statuses?limit=1&exclude_replies=true&exclude_reblogs=true",
-          { headers: { "User-Agent": "Mozilla/5.0 (compatible; shibez-bot/1.0)" } }
-        );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const post = data?.[0];
-        if (!post) return client.say(replyTo, `@${user} ⚠️ Couldn't fetch Trump's latest Truth Social post.`).catch(() => {});
-        // Strip HTML tags from content
-        const text = (post.content || "")
-          .replace(/<br\s*\/?>/gi, " ")
-          .replace(/<[^>]+>/g, "")
+      const HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/rss+xml, application/xml, text/xml, */*",
+      };
+
+      function parseTruthRss(xml) {
+        const items = xml.split("<item>");
+        if (items.length < 2) return null;
+        const item = items[1];
+        const titleM = item.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/);
+        const dateM  = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+        const linkM  = item.match(/<link>([\s\S]*?)<\/link>/)
+                    || item.match(/<guid[^>]*>([\s\S]*?)<\/guid>/);
+        if (!titleM) return null;
+        const text = titleM[1]
           .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-          .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+          .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
           .trim();
-        const date = post.created_at ? new Date(post.created_at).toLocaleDateString("en-GB") : "?";
-        const url  = post.url || `https://truthsocial.com/@realDonaldTrump`;
-        client.say(replyTo,
-          `@${user} 🇺🇸 Trump (${date}): ${text} | ${url}`.slice(0, 499)
-        ).catch(() => {});
-      } catch (e) {
-        client.say(replyTo, `@${user} ⚠️ Trump tweet fetch failed: ${e.message}`).catch(() => {});
+        const date = dateM ? new Date(dateM[1].trim()).toLocaleDateString("en-GB") : "?";
+        const link = (linkM ? linkM[1] : "https://truthsocial.com/@realDonaldTrump").trim();
+        return { text, date, link };
       }
+
+      // Try 1: Truth Social RSS (most reliable, no auth needed)
+      const RSS_URLS = [
+        "https://truthsocial.com/@realDonaldTrump.rss",
+        "https://truthsocial.com/users/realDonaldTrump.rss",
+      ];
+      for (const rssUrl of RSS_URLS) {
+        try {
+          const res = await fetch(rssUrl, {
+            headers: HEADERS,
+            signal: AbortSignal.timeout(8_000),
+          });
+          if (!res.ok) continue;
+          const xml  = await res.text();
+          const item = parseTruthRss(xml);
+          if (!item || !item.text || item.text.length < 3) continue;
+          return client.say(replyTo,
+            `@${user} 🇺🇸 Trump (${item.date}): ${item.text} | ${item.link}`.slice(0, 499)
+          ).catch(() => {});
+        } catch (_) { continue; }
+      }
+
+      // Try 2: Mastodon-compatible API (may be rate-limited for non-browser requests)
+      const API_IDS = ["107780257626128497", "1"];
+      for (const id of API_IDS) {
+        try {
+          const res = await fetch(
+            `https://truthsocial.com/api/v1/accounts/${id}/statuses?limit=1&exclude_replies=true&exclude_reblogs=true`,
+            { headers: HEADERS, signal: AbortSignal.timeout(8_000) }
+          );
+          if (!res.ok) continue;
+          const data = await res.json();
+          const post = Array.isArray(data) ? data[0] : null;
+          if (!post) continue;
+          const text = (post.content || "")
+            .replace(/<br\s*\/?>/gi, " ").replace(/<[^>]+>/g, "")
+            .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+          if (!text) continue;
+          const date = post.created_at ? new Date(post.created_at).toLocaleDateString("en-GB") : "?";
+          const url  = post.url || "https://truthsocial.com/@realDonaldTrump";
+          return client.say(replyTo,
+            `@${user} 🇺🇸 Trump (${date}): ${text} | ${url}`.slice(0, 499)
+          ).catch(() => {});
+        } catch (_) { continue; }
+      }
+
+      client.say(replyTo, `@${user} ⚠️ Couldn't fetch Trump's latest Truth Social post right now.`).catch(() => {});
     });
     return null;
   }
@@ -1600,15 +1645,25 @@ function handle(channel, tags, message, ctx) {
     const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
     const user = (tags.username || "").toLowerCase();
     Promise.resolve().then(async () => {
+      // Up-to-date nitter instance list — ordered by reliability
       const NITTER_INSTANCES = [
         "https://nitter.poast.org",
         "https://nitter.privacydev.net",
+        "https://nitter.tiekoetter.com",
         "https://nitter.space",
+        "https://nitter.lucabased.xyz",
+        "https://lightbrd.com",
+        "https://xcancel.com",
+        "https://nitter.unixfox.eu",
+        "https://nitter.esmailelbob.xyz",
+        "https://nitter.projectsegfau.lt",
+        "https://nitter.rawbit.ninja",
+        "https://nitter.moomoo.me",
         "https://nitter.1d4.us",
         "https://nitter.kavin.rocks",
       ];
       const HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept":     "application/rss+xml, application/xml, text/xml",
       };
 
@@ -1622,34 +1677,39 @@ function handle(channel, tags, message, ctx) {
         const linkMatch  = item.match(/<link>([\s\S]*?)<\/link>/);
         if (!titleMatch) return null;
         const text = titleMatch[1]
-          .replace(/^R to @\S+:\s*/i, "") // strip "R to @user:" reply prefix nitter adds
+          .replace(/^R to @\S+:\s*/i, "")   // strip "R to @user:" reply prefix
+          .replace(/^RT by @\S+:\s*/i, "")  // strip RT prefix
           .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-          .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-          .trim();
+          .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
+          .replace(/\s+/g, " ").trim();
         const date = dateMatch ? new Date(dateMatch[1].trim()).toLocaleDateString("en-GB") : "?";
-        // Rewrite nitter link to x.com
+        // Always rewrite to x.com regardless of which nitter instance served it
         const link = (linkMatch ? linkMatch[1] : "")
           .replace(/https?:\/\/[^/]+\//, "https://x.com/").trim();
         return { text, date, link };
       }
 
+      // Try each nitter instance with a short per-instance timeout
       for (const instance of NITTER_INSTANCES) {
         try {
           const res = await fetch(`${instance}/forsen/rss`, {
             headers: HEADERS,
-            signal:  AbortSignal.timeout(6_000),
+            signal:  AbortSignal.timeout(5_000),
           });
           if (!res.ok) continue;
           const xml  = await res.text();
+          // Quick sanity check — dead instances return HTML login pages
+          if (!xml.includes("<rss") && !xml.includes("<feed")) continue;
           const item = parseFirstRssItem(xml);
-          if (!item || !item.text) continue;
+          if (!item || !item.text || item.text.length < 3) continue;
           client.say(replyTo,
             `@${user} 🐦 forsen (${item.date}): ${item.text}${item.link ? ` | ${item.link}` : ""}`.slice(0, 499)
           ).catch(() => {});
           return;
         } catch (_) { continue; }
       }
-      // All nitter instances failed — give a direct link
+
+      // All nitter instances failed
       client.say(replyTo,
         `@${user} 🐦 Couldn't fetch forsen's latest tweet right now. Check manually: https://x.com/forsen`
       ).catch(() => {});
