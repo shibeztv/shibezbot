@@ -719,7 +719,7 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "commands") {
     const user = (tags.username || "").toLowerCase();
-    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | roll | choose | coinflip | forsenalert | forsenrun | bancheck | botcheck | ping | quote | offliners | logs | linecount | loseroftheday | lastline | firstline | lastseen | isdown | stock | crypto | user | isbanned | founders | namecheck | randomclip | notify | lines | top | status | help`;
+    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | roll | choose | coinflip | forsenalert | forsenrun | bancheck | botcheck | ping | quote | offliners | logs | linecount | loseroftheday | lastline | firstline | lastseen | isdown | stock | crypto | user | isbanned | founders | namecheck | randomclip | trumptweet | forsentweet | randomemote (ra) | notify | lines | top | status | help`;
   }
 
   if (cmd === "howtoadd") {
@@ -1544,9 +1544,181 @@ function handle(channel, tags, message, ctx) {
     return null;
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ── ELEVATED ACCESS — mods / VIPs / broadcaster only ─────────────────────
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ?trumptweet — latest post from Trump's Truth Social
+  if (cmd === "trumptweet") {
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        // Trump's Truth Social account ID (Mastodon-compatible public API, no auth needed)
+        const res  = await fetch(
+          "https://truthsocial.com/api/v1/accounts/107780257626128497/statuses?limit=1&exclude_replies=true&exclude_reblogs=true",
+          { headers: { "User-Agent": "Mozilla/5.0 (compatible; shibez-bot/1.0)" } }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const post = data?.[0];
+        if (!post) return client.say(replyTo, `@${user} ⚠️ Couldn't fetch Trump's latest Truth Social post.`).catch(() => {});
+        // Strip HTML tags from content
+        const text = (post.content || "")
+          .replace(/<br\s*\/?>/gi, " ")
+          .replace(/<[^>]+>/g, "")
+          .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+          .trim();
+        const date = post.created_at ? new Date(post.created_at).toLocaleDateString("en-GB") : "?";
+        const url  = post.url || `https://truthsocial.com/@realDonaldTrump`;
+        client.say(replyTo,
+          `@${user} 🇺🇸 Trump (${date}): ${text} | ${url}`.slice(0, 499)
+        ).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Trump tweet fetch failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+  // ?forsentweet — latest tweet from forsen's X account via nitter RSS
+  if (cmd === "forsentweet") {
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      const NITTER_INSTANCES = [
+        "https://nitter.poast.org",
+        "https://nitter.privacydev.net",
+        "https://nitter.space",
+        "https://nitter.1d4.us",
+        "https://nitter.kavin.rocks",
+      ];
+      const HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept":     "application/rss+xml, application/xml, text/xml",
+      };
+
+      function parseFirstRssItem(xml) {
+        const items = xml.split("<item>");
+        if (items.length < 2) return null;
+        const item = items[1];
+        const titleMatch = item.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/)
+          || item.match(/<title>([\s\S]*?)<\/title>/);
+        const dateMatch  = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+        const linkMatch  = item.match(/<link>([\s\S]*?)<\/link>/);
+        if (!titleMatch) return null;
+        const text = titleMatch[1]
+          .replace(/^R to @\S+:\s*/i, "") // strip "R to @user:" reply prefix nitter adds
+          .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+          .trim();
+        const date = dateMatch ? new Date(dateMatch[1].trim()).toLocaleDateString("en-GB") : "?";
+        // Rewrite nitter link to x.com
+        const link = (linkMatch ? linkMatch[1] : "")
+          .replace(/https?:\/\/[^/]+\//, "https://x.com/").trim();
+        return { text, date, link };
+      }
+
+      for (const instance of NITTER_INSTANCES) {
+        try {
+          const res = await fetch(`${instance}/forsen/rss`, {
+            headers: HEADERS,
+            signal:  AbortSignal.timeout(6_000),
+          });
+          if (!res.ok) continue;
+          const xml  = await res.text();
+          const item = parseFirstRssItem(xml);
+          if (!item || !item.text) continue;
+          client.say(replyTo,
+            `@${user} 🐦 forsen (${item.date}): ${item.text}${item.link ? ` | ${item.link}` : ""}`.slice(0, 499)
+          ).catch(() => {});
+          return;
+        } catch (_) { continue; }
+      }
+      // All nitter instances failed — give a direct link
+      client.say(replyTo,
+        `@${user} 🐦 Couldn't fetch forsen's latest tweet right now. Check manually: https://x.com/forsen`
+      ).catch(() => {});
+    });
+    return null;
+  }
+
+  // ?randomemote / ?ra — post a random emote from the current channel (7TV + BTTV + FFZ + Twitch)
+  if (cmd === "randomemote" || cmd === "ra") {
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        const emotes = [];
+
+        // Need broadcaster Twitch user ID for 7TV + BTTV
+        let broadcasterId = null;
+        if (helixGet) {
+          try {
+            const bd = await helixGet(`users?login=${encodeURIComponent(ch)}`);
+            broadcasterId = bd.data?.[0]?.id || null;
+          } catch (_) {}
+        }
+
+        // 7TV channel emotes
+        if (broadcasterId) {
+          try {
+            const r = await fetch(`https://7tv.io/v3/users/twitch/${broadcasterId}`, {
+              headers: { "User-Agent": "shibez-bot/1.0" },
+            });
+            if (r.ok) {
+              const d = await r.json();
+              for (const e of (d?.emote_set?.emotes || [])) {
+                if (e.name) emotes.push(e.name);
+              }
+            }
+          } catch (_) {}
+        }
+
+        // BTTV channel + shared emotes
+        if (broadcasterId) {
+          try {
+            const r = await fetch(`https://api.betterttv.net/3/cached/users/twitch/${broadcasterId}`, {
+              headers: { "User-Agent": "shibez-bot/1.0" },
+            });
+            if (r.ok) {
+              const d = await r.json();
+              for (const e of [...(d.channelEmotes || []), ...(d.sharedEmotes || [])]) {
+                if (e.code) emotes.push(e.code);
+              }
+            }
+          } catch (_) {}
+        }
+
+        // FFZ channel emotes
+        try {
+          const r = await fetch(`https://api.frankerfacez.com/v1/room/${encodeURIComponent(ch)}`, {
+            headers: { "User-Agent": "shibez-bot/1.0" },
+          });
+          if (r.ok) {
+            const d = await r.json();
+            for (const set of Object.values(d.sets || {})) {
+              for (const e of (set.emoticons || [])) {
+                if (e.name) emotes.push(e.name);
+              }
+            }
+          }
+        } catch (_) {}
+
+        if (emotes.length === 0) {
+          return client.say(replyTo, `@${user} ⚠️ No emotes found for #${ch}.`).catch(() => {});
+        }
+
+        const pick = emotes[Math.floor(Math.random() * emotes.length)];
+        client.say(replyTo, pick).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Emote fetch failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+
 
   if (!hasAnyAccess(tags, state)) return null;
 

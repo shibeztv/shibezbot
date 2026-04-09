@@ -72,6 +72,9 @@ All commands use the `?` prefix.
 | `?founders <channel>` | List the founders of a channel (requires broadcaster auth — may be unavailable) |
 | `?namecheck <username>` | Check if a Twitch username is available (also catches suspended accounts) |
 | `?randomclip <channel> [game:<game>] [-day\|-week\|-month\|-year]` | Get a random clip from a channel |
+| `?trumptweet` | Get the latest post from Trump's Truth Social |
+| `?forsentweet` | Get forsen's latest tweet from X |
+| `?randomemote` / `?ra` | Post a random emote from the current channel (7TV, BTTV, FFZ) |
 
 ---
 
@@ -183,6 +186,10 @@ Everything above, plus cross-channel control:
 ?randomclip forsen      → 🎬 "insane speedrun moment" by clipperguy (4,201 views) | https://clips.twitch.tv/...
 ?randomclip forsen -week → 🎬 Random clip from the last week
 ?randomclip forsen game:Minecraft → 🎬 Random Minecraft clip from forsen
+?trumptweet             → 🇺🇸 Trump (08/04/2026): MAKE AMERICA GREAT AGAIN! | https://truthsocial.com/...
+?forsentweet            → 🐦 forsen (07/04/2026): forsenE | https://x.com/forsen/status/...
+?randomemote            → Pepega
+?ra                     → forsenE
 ?forsenrun               → 🎮 forsen MC run — ⏱️ 9m 32s | Real: 10m 1s | 📍 Nether
 ?bancheck xqc               → 🔨 xqc — 3 bans | Last: 12/01/2024 | Reason: hateful conduct | Duration: 30 days
 ?botcheck suspiciousguy     → 🤖 #suspiciousguy: 1,840 viewers | 120 followers | ratio 15.33 | channel age: 14d | 🚨 SUSPICIOUS
