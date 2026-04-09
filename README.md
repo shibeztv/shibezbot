@@ -1,4 +1,4 @@
-# 🤖 Shibez_bot
+# 🤖 Twitch Bot (Shibez_bot)
 
 A Twitch bot that blends in as a viewer by posting Markov-generated chat messages,
 with a full live command system and fun other features!
@@ -54,6 +54,24 @@ All commands use the `?` prefix.
 | `?notify offline on/off` | Subscribe/unsubscribe to offline pings |
 | `?notify category on/off` | Subscribe/unsubscribe to game/category change pings |
 | `?notify list` | Show subscriber counts for each notification type |
+| `?ping` | Bot status: uptime, memory, channels, corpus size |
+| `?quote` | Get today's motivational quote |
+| `?offliners` | Link to y_exp's Offliners site for this channel |
+| `?logs <channel> <user>` | Get a link to chatlogs for a channel/user pair (ZonianMidian's best-logs + Supelle's frontend) |
+| `?linecount [user] [-global] [days:1]` | Show how many messages a user has sent in this channel or globally |
+| `?loseroftheday` | Top chatter today in this channel |
+| `?lotw` / `?lotm` / `?loty` | Top chatter all-time (weekly/monthly/yearly not separately tracked) |
+| `?lastline <user>` | Last message a user sent in this channel (current session) |
+| `?firstline <user>` | First message a user ever sent in this channel (tracked since bot joined) |
+| `?lastseen <user>` | When and where a user was last seen |
+| `?isdown <domain>` | Check if a website is up or down |
+| `?stock <ticker>` | Current stock price and daily change (e.g. `?stock AAPL`) |
+| `?crypto <symbol>` | Current crypto price and 24h change (e.g. `?crypto BTC`) |
+| `?user [username]` | Twitch user info — creation date, followers, last live, partner status |
+| `?isbanned <username>` | Check if a Twitch account is banned/suspended |
+| `?founders <channel>` | List the founders of a channel (requires broadcaster auth — may be unavailable) |
+| `?namecheck <username>` | Check if a Twitch username is available to register |
+| `?randomclip <channel> [game:<game>] [-day\|-week\|-month\|-year]` | Get a random clip from a channel |
 
 ---
 
@@ -140,6 +158,28 @@ Everything above, plus cross-channel control:
 ?forsenalert remove viewer1       → ✅ Removed viewer1 from forsen alerts in #shlbez.
 ?forsenalert list                 → forsenE #shlbez alert subs (2): bolsogoat, viewer1
 ?forsenalert list jaskuz          → forsenE #jaskuz alert subs (1): koljake
+?ping                   → 🏓 Pong! ● Uptime: 9h 14m ● Channels: 5 ● Memory: 82.3MB ● Corpus: 50,000 lines
+?quote                  → 💬 "The only way to do great work is to love what you do." — Steve Jobs
+?offliners              → 💤 Offliners for #shlbez: https://twitch.yexp.dev/offliners/shlbez
+?logs shlbez xqc        → 📋 Logs for @xqc in #shlbez: https://logs.zonian.dev/rdr/shlbez/xqc?pretty=true
+?linecount              → 📊 shlbez — 4,201 messages in #shlbez (all-time).
+?linecount viewer1 -global → 📊 viewer1 — 12,500 messages tracked globally.
+?linecount days:1       → 📊 shlbez — 42 messages in #shlbez today.
+?loseroftheday          → 🥔 Loser of the day in #shlbez: @viewer1 (412 msgs today) — 1. viewer1 (412) | 2. viewer2 (301) | 3. viewer3 (188)
+?lastline viewer1       → 💬 viewer1's last line in #shlbez: "this run is insane bro"
+?firstline viewer1      → 💬 viewer1's first line in #shlbez (01/01/2024): "hello chat"
+?lastseen viewer1       → 👁️ viewer1 was last seen in #shlbez 3h ago.
+?isdown twitch.tv       → 🌐 twitch.tv — ✅ UP | Status: 200 | Response time: 142ms
+?stock AAPL             → 📈 Apple Inc. (AAPL) | 204.10 USD | +2.38 (+1.18%)
+?crypto BTC             → 📈 Bitcoin (BTC) | $65,432 USD | +2.50% (24h)
+?user xqc               → 👤 xQc (xqc) | ID: 71092938 | Created: 12/01/2018 | Followers: 11,200,000 | Last live: 07/04/2026 | Partner
+?isbanned someguy       → 🔨 someguy IS currently banned/suspended from Twitch.
+?namecheck coolname     → ✅ "coolname" appears to be available on Twitch!
+?namecheck xqc          → ❌ "xqc" is taken — registered to xQc (created 12/01/2018).
+?founders shlbez        → 🏅 Founders of #shlbez (3): viewer1, viewer2, viewer3
+?randomclip forsen      → 🎬 "insane speedrun moment" by clipperguy (4,201 views) | https://clips.twitch.tv/...
+?randomclip forsen -week → 🎬 Random clip from the last week
+?randomclip forsen game:Minecraft → 🎬 Random Minecraft clip from forsen
 ?forsenrun               → 🎮 forsen MC run — ⏱️ 9m 32s | Real: 10m 1s | 📍 Nether
 ?bancheck xqc               → 🔨 xqc — 3 bans | Last: 12/01/2024 | Reason: hateful conduct | Duration: 30 days
 ?botcheck suspiciousguy     → 🤖 #suspiciousguy: 1,840 viewers | 120 followers | ratio 15.33 | channel age: 14d | 🚨 SUSPICIOUS

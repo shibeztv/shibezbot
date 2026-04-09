@@ -8,6 +8,8 @@ const stateManager = require("./state");
 const commands     = require("./commands");
 const filter       = require("./filter");
 
+const BOT_START = Date.now(); // used by ?ping for uptime
+
 // ── Required env vars ─────────────────────────────────────────────────────────
 
 const BOT_USERNAME         = process.env.BOT_USERNAME;
@@ -261,12 +263,37 @@ setInterval(updateLiveChannels, 2 * 60 * 1000);
 // Response example: { "gameTime": "00:11:32.400", "realTime": "00:12:01.200", ... }
 // NOTE: If the endpoint URL is slightly different, update FORSENMC_API_URL below.
 
-// Channels where subscribers get whispered instead of @mentioned in chat.
-// WHISPER_CHAT_MENTION defines which users in that channel still get a chat @mention
-// (everyone else gets a whisper). These are checked against the live subscriber list,
-// so if they unsubscribe via ?forsenalert off they stop getting mentioned too.
-const WHISPER_CHANNELS     = new Set(["nymn"]);
-const WHISPER_CHAT_MENTION = { nymn: ["nymn"] };
+// Partner channels get whisper-mode alerts automatically:
+// subscribers are whispered, only the broadcaster gets a chat @mention.
+// Populated by fetchPartnerChannels() on connect and every 10 minutes.
+const partnerChannels = new Set();
+
+async function fetchPartnerChannels() {
+  if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) return;
+  const joined = allChannels();
+  if (!joined.length) return;
+  try {
+    // Helix allows up to 100 logins per request
+    const chunks = [];
+    for (let i = 0; i < joined.length; i += 100) chunks.push(joined.slice(i, i + 100));
+    partnerChannels.clear();
+    for (const chunk of chunks) {
+      const params = chunk.map(ch => `login=${encodeURIComponent(ch)}`).join("&");
+      const data   = await helixGet(`users?${params}`);
+      for (const u of (data.data || [])) {
+        if (u.broadcaster_type === "partner") {
+          partnerChannels.add(u.login.toLowerCase());
+        }
+      }
+    }
+    console.log(`🌟  Partner channels: ${[...partnerChannels].join(", ") || "(none)"}`);
+  } catch (e) {
+    console.warn("⚠️  Could not fetch partner status:", e.message);
+  }
+}
+
+setInterval(fetchPartnerChannels, 10 * 60 * 1000);
+
 const FORSENMC_THRESHOLD  = 11 * 60;  // 11 minutes in seconds — alert when run reaches this
 const FORSENMC_POLL_MS    = 45_000;   // poll every 45s (site updates every 4s, no need to hammer)
 
@@ -385,33 +412,32 @@ async function checkForsenMc() {
       const timeStr = formatRunTime(gameSecs);
       const hint = "| type ?forsenalert to get notified!";
 
-      // Broadcast to all post channels + manual channels, tagging only
-      // the users who subscribed in each specific channel.
-      // For WHISPER_CHANNELS: whisper all subscribers except those in WHISPER_CHAT_MENTION.
+      // Broadcast to all post channels + manual channels.
+      // Partner channels: whisper all subscribers, only @mention the broadcaster in chat.
+      // Non-partner channels: @mention all subscribers in chat.
       const targets = [...new Set([...state.postChannels, ...(state.manualChannels || [])])];
       for (const ch of targets) {
         const channelSubs = (state.forsenAlertChannels && state.forsenAlertChannels[ch]) || [];
-        const noLinks     = ch === "xqc";
-        const linkPart    = noLinks ? "" : " — twitch.tv/forsen";
 
-        if (WHISPER_CHANNELS.has(ch)) {
-          // Chat @mention only privileged users who are still subscribed
-          const chatUsers    = (WHISPER_CHAT_MENTION[ch] || []).filter(u => channelSubs.includes(u));
-          const chatMentions = chatUsers.length > 0 ? chatUsers.map(u => `@${u}`).join(" ") + " " : "";
+        if (partnerChannels.has(ch)) {
+          const linkPart     = ch === "xqc" ? "" : " — twitch.tv/forsen";
+          // In partner channels only @mention the broadcaster if they're subscribed
+          const chatUsers    = channelSubs.includes(ch) ? [ch] : [];
+          const chatMentions = chatUsers.length > 0 ? `@${ch} ` : "";
           const chatMsg      = `${chatMentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr}${linkPart} ${hint}`;
           client.say(`#${ch}`, chatMsg).catch(() => {});
 
-          // Whisper everyone else
-          const whisperUsers = channelSubs.filter(u => !chatUsers.includes(u));
+          // Whisper everyone else who is subscribed
+          const whisperUsers = channelSubs.filter(u => u !== ch);
           whisperUsers.forEach((u, i) => {
             setTimeout(() => {
               client.whisper(u, `forsenE 🎯 Forsen is on a god run! Current time: ${timeStr} — twitch.tv/forsen`).catch(() => {});
             }, i * 600);
           });
-          console.log(`🎮 [forsenmc] #${ch}: chat mention (${chatUsers.join(", ")}) + whispered ${whisperUsers.length} users.`);
+          console.log(`🎮 [forsenmc] #${ch} (partner): chat mention (${chatUsers.join(", ") || "none"}) + whispered ${whisperUsers.length} users.`);
         } else {
           const mentions = channelSubs.length > 0 ? channelSubs.map(u => `@${u}`).join(" ") + " " : "";
-          const msg      = `${mentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr}${linkPart} ${hint}`;
+          const msg      = `${mentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr} — twitch.tv/forsen ${hint}`;
           console.log(`🎮 [forsenmc] Firing alert in #${ch}: ${msg}`);
           client.say(`#${ch}`, msg).catch(() => {});
         }
@@ -576,47 +602,6 @@ const recentViewers   = {};        // { channelName: { username: lastMsgTimestam
 let   watchtimeTick   = null;      // interval handle
 const USER_MSG_CAP = 150;
 
-// ── Message count tracking — for ?linecount and ?loseroftheday ────────────────
-// msgStats[channel][username] = { total: N, daily: [{date:"YYYY-MM-DD", count:N}, ...] }
-// "daily" keeps a rolling 365-day window; older entries are pruned periodically.
-const MSG_STATS_FILE = path.join(DATA_DIR || ".", "msg_stats.json");
-const msgStats = {};   // { channelName: { username: { total: N, daily: [{date,count}] } } }
-
-function loadMsgStats() {
-  try {
-    if (fs.existsSync(MSG_STATS_FILE)) {
-      const raw = JSON.parse(fs.readFileSync(MSG_STATS_FILE, "utf8"));
-      Object.assign(msgStats, raw);
-      console.log("📊  Message stats loaded.");
-    }
-  } catch (e) { console.warn("⚠️  Could not load msg_stats.json:", e.message); }
-}
-loadMsgStats();
-
-function recordMsg(ch, username) {
-  if (!msgStats[ch]) msgStats[ch] = {};
-  if (!msgStats[ch][username]) msgStats[ch][username] = { total: 0, daily: [] };
-  const entry = msgStats[ch][username];
-  entry.total++;
-
-  const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
-  const last  = entry.daily[entry.daily.length - 1];
-  if (last && last.date === today) {
-    last.count++;
-  } else {
-    entry.daily.push({ date: today, count: 1 });
-    // Prune entries older than 365 days
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 365);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-    entry.daily = entry.daily.filter(d => d.date >= cutoffStr);
-  }
-}
-
-// Save stats every 2 minutes
-setInterval(() => {
-  try { fs.writeFileSync(MSG_STATS_FILE, JSON.stringify(msgStats), "utf8"); } catch (e) {}
-}, 2 * 60_000);
-
 function learnMessage(username, message) {
   if (IGNORE_BOTS.includes(username.toLowerCase())) return;
   if (username.toLowerCase() === BOT_USERNAME.toLowerCase()) return;
@@ -677,7 +662,47 @@ watchtimeTick = setInterval(() => {
   try { fs.writeFileSync(WATCHTIME_FILE, JSON.stringify(watchtime, null, 2), "utf8"); } catch (e) {}
 }, 60_000);
 
-// ── Command context ───────────────────────────────────────────────────────────
+// ── Linecount / lastseen / firstline tracking ─────────────────────────────────
+
+const LINECOUNT_FILE = path.join(DATA_DIR, "linecount.json");
+const LASTSEEN_FILE  = path.join(DATA_DIR, "lastseen.json");
+const FIRSTLINE_FILE = path.join(DATA_DIR, "firstline.json");
+
+const linecount   = {};  // { channel: { user: totalCount } }
+const lastseen    = {};  // { user: { channel, at } }
+const firstline   = {};  // { channel: { user: { text, at } } }
+const lastMessage = {};  // { channel: { user: "last msg text" } } — in-memory only
+const dailyCount  = {};  // { channel: { user: count } } — resets at midnight (in-memory only)
+
+function loadJSON(file) {
+  if (fs.existsSync(file)) {
+    try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) {}
+  }
+  return {};
+}
+
+Object.assign(linecount, loadJSON(LINECOUNT_FILE));
+Object.assign(lastseen,  loadJSON(LASTSEEN_FILE));
+Object.assign(firstline, loadJSON(FIRSTLINE_FILE));
+console.log(`📊  Linecount loaded: ${Object.keys(linecount).length} channel(s).`);
+
+setInterval(() => {
+  try { fs.writeFileSync(LINECOUNT_FILE, JSON.stringify(linecount), "utf8"); } catch (e) {}
+  try { fs.writeFileSync(LASTSEEN_FILE,  JSON.stringify(lastseen),  "utf8"); } catch (e) {}
+  try { fs.writeFileSync(FIRSTLINE_FILE, JSON.stringify(firstline), "utf8"); } catch (e) {}
+}, 60_000);
+
+// Reset daily count at midnight
+function scheduleMidnightReset() {
+  const now  = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+  setTimeout(() => {
+    for (const ch of Object.keys(dailyCount)) dailyCount[ch] = {};
+    console.log("🕛  Daily linecount reset.");
+    scheduleMidnightReset();
+  }, next - now);
+}
+scheduleMidnightReset();
 
 const ctx = {
   state, saveState,
@@ -694,8 +719,13 @@ const ctx = {
   reminders,
   sayCooldowns,
   watchtime,
-  msgStats,
   botcheckCooldowns: {},
+  botStart: BOT_START,
+  linecount,
+  dailyCount,
+  lastseen,
+  firstline,
+  lastMessage,
   forsenMcLatestData: () => forsenMcLatestData,
   isForsenLive: () => liveChannels.has("forsen"),
   isForsenPlayingMinecraft: () => (prevCategories["forsen"] || "").toLowerCase().includes("minecraft"),
@@ -718,6 +748,7 @@ client.on("connected", (addr, port) => {
   if (TWITCH_CLIENT_ID && TWITCH_CLIENT_SECRET) {
     console.log(`🔴  Live channel tracking: enabled`);
     updateLiveChannels();
+    fetchPartnerChannels();
   } else {
     console.log(`⚠️  Live channel tracking: disabled (TWITCH_CLIENT_ID/SECRET not set)`);
   }
@@ -735,17 +766,23 @@ client.on("message", (channel, tags, message, self) => {
     if (isChannelLive(ch)) learnMessage(username, message);
   }
 
-  // Track message counts for ?linecount / ?loseroftheday (all channels, all users, always)
-  if (state.postChannels.includes(ch) || state.manualChannels.includes(ch) || state.learnChannels.includes(ch)) {
-    if (!IGNORE_BOTS.includes(username) && username !== BOT_USERNAME.toLowerCase()) {
-      recordMsg(ch, username);
-    }
-  }
-
   // Track recent viewers for watchtime
   if (state.postChannels.includes(ch) || state.manualChannels.includes(ch)) {
     if (!recentViewers[ch]) recentViewers[ch] = {};
     recentViewers[ch][username] = Date.now();
+  }
+
+  // Track linecount, lastseen, firstline, lastMessage (post + manual channels only)
+  if (state.postChannels.includes(ch) || manualChannels.includes(ch)) {
+    if (!linecount[ch]) linecount[ch] = {};
+    linecount[ch][username] = (linecount[ch][username] || 0) + 1;
+    if (!dailyCount[ch]) dailyCount[ch] = {};
+    dailyCount[ch][username] = (dailyCount[ch][username] || 0) + 1;
+    lastseen[username] = { channel: ch, at: Date.now() };
+    if (!lastMessage[ch]) lastMessage[ch] = {};
+    lastMessage[ch][username] = message;
+    if (!firstline[ch]) firstline[ch] = {};
+    if (!firstline[ch][username]) firstline[ch][username] = { text: message, at: Date.now() };
   }
 
   if (state.postChannels.includes(ch)) incrementCounter(ch);
@@ -839,6 +876,9 @@ process.on("SIGINT", () => {
   console.log("\n🛑  Shutting down…");
   if (newLines.length > 0) fs.appendFileSync(LEARNED_FILE, newLines.join("\n") + "\n", "utf8");
   try { fs.writeFileSync(WATCHTIME_FILE, JSON.stringify(watchtime, null, 2), "utf8"); } catch (e) {}
+  try { fs.writeFileSync(LINECOUNT_FILE, JSON.stringify(linecount), "utf8"); } catch (e) {}
+  try { fs.writeFileSync(LASTSEEN_FILE,  JSON.stringify(lastseen),  "utf8"); } catch (e) {}
+  try { fs.writeFileSync(FIRSTLINE_FILE, JSON.stringify(firstline), "utf8"); } catch (e) {}
   saveState();
   client.disconnect();
   process.exit(0);

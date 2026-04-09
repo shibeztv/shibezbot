@@ -25,7 +25,8 @@ const DEFAULTS = {
   forsenAlertChannels: {   // { channelName: ["user1", "user2", ...] }
     shlbez: ["bolsogoat"], // bolsogoat pre-subscribed to #shlbez alerts
     jaskuz: ["koljake"],   // koljake pre-subscribed to #jaskuz alerts
-    nymn: [                // nymn subscribers — whispered on alert, except @nymn who gets chat mention
+    nymn: [                // nymn subscribers — partner channel so all get whispered;
+                           // nymn himself gets a chat @mention automatically as the broadcaster
       "nymn",
       "aztronat", "healonthesofa", "paktzu", "krappa", "4cdee", "tabbbik",
       "onska01", "brunix126", "aw0led_", "toriwoo", "targaryenforsen",

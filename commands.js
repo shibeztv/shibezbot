@@ -65,7 +65,7 @@ function handle(channel, tags, message, ctx) {
         `👑 Owner (?): ` +
         `say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | ` +
         `forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | ` +
-        `roll | choose | coinflip | bancheck | botcheck | isbanned | isdown | logs | linecount | loseroftheday | lotw | lotm | loty | forsenalert | forsenrun | lines | followage | top | status | commands | ` +
+        `roll | choose | coinflip | bancheck | botcheck | forsenalert | forsenrun | lines | followage | top | status | commands | ` +
         `notify | start | stop | interval | cooldown | minlines | onlineonly | greeter | ` +
         `join | leave | manual | unmanual | addlearn | removelearn | adduser | removeuser | users | ` +
         `channels | removeme`
@@ -682,25 +682,19 @@ function handle(channel, tags, message, ctx) {
     return MONKA_LINES[Math.floor(Math.random() * MONKA_LINES.length)];
   }
 
- if (cmd === "iq") {
+  if (cmd === "iq") {
     const target = (args[0] || tags.username || "").toLowerCase().replace(/^@/, "").trim();
-
     let hash = 0;
-    for (let i = 0; i < target.length; i++) {
-        hash = (hash * 31 + target.charCodeAt(i)) >>> 0;
-    }
-
-    const iq = 50 + (hash % 101);   // ← This was the broken line
-
+    for (let i = 0; i < target.length; i++) hash = (hash * 31 + target.charCodeAt(i)) >>> 0;
+    const iq = 50 + (hash % 101);
     const label =
-        iq >= 140 ? "you are literally forsen" :
-        iq >= 120 ? "almost Mensa certified." :
-        iq >= 100 ? "average chatter" :
-        iq >= 80  ? "slightly below average Pepega" :
-                    "Pepega Clap";
-
+      iq >= 140 ? "galaxy brain 5Head" :
+      iq >= 120 ? "pretty smart ngl" :
+      iq >= 100 ? "average chat member" :
+      iq >= 80  ? "slightly below average Pepega" :
+                  "Pepega Clap";
     return `🧠 ${target}'s IQ is ${iq} — ${label}`;
-}
+  }
 
   if (cmd === "clip") {
     if (!helixGet) return `⚠️ Twitch API not configured (missing TWITCH_CLIENT_ID/SECRET).`;
@@ -725,7 +719,7 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "commands") {
     const user = (tags.username || "").toLowerCase();
-    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | lines | top | status | roll | choose | coinflip | forsenalert | forsenrun | bancheck | botcheck | isbanned | isdown | logs | linecount | loseroftheday | lotd | lotw | lotm | loty | notify | help`;
+    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | lines | top | status | roll | choose | coinflip | forsenalert | forsenrun | bancheck | botcheck | ping | quote | offliners | logs | linecount | loseroftheday | lastline | firstline | lastseen | isdown | stock | crypto | user | isbanned | founders | namecheck | randomclip | notify | help`;
   }
 
   if (cmd === "howtoadd") {
@@ -1134,148 +1128,383 @@ function handle(channel, tags, message, ctx) {
     return null;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── NEW PUBLIC COMMANDS ───────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
 
-  // ── ?isbanned <username> ──────────────────────────────────────────────────
-  if (cmd === "isbanned") {
-    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
-    if (!target) return `⚠️ Usage: ${PREFIX}isbanned <username>`;
-    const { client } = ctx;
-    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
-    const user = (tags.username || "").toLowerCase();
-    Promise.resolve().then(async () => {
-      try {
-        // A banned/suspended Twitch account returns 404 or empty data from /users
-        // A banned-from-channel user still exists globally — we can only check site bans
-        if (!helixGet) throw new Error("Twitch API not configured.");
-        const data = await helixGet(`users?login=${encodeURIComponent(target)}`);
-        if (!data.data || data.data.length === 0) {
-          return client.say(replyTo, `🔨 ${target} — account not found on Twitch (likely suspended/banned from the site).`).catch(() => {});
-        }
-        const u = data.data[0];
-        client.say(replyTo, `✅ ${u.display_name} — account is active on Twitch (not site-banned). Created: ${new Date(u.created_at).toLocaleDateString("en-GB")}`).catch(() => {});
-      } catch (e) {
-        client.say(replyTo, `@${user} ⚠️ isbanned lookup failed: ${e.message}`).catch(() => {});
-      }
-    });
-    return null;
+  // ?ping — bot status
+  if (cmd === "ping") {
+    const uptimeMs = Date.now() - ctx.botStart;
+    const h   = Math.floor(uptimeMs / 3_600_000);
+    const m   = Math.floor((uptimeMs % 3_600_000) / 60_000);
+    const memMB = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1);
+    const totalChs = [...new Set([
+      ...state.postChannels,
+      ...(state.manualChannels || []),
+      ...state.learnChannels,
+    ])].length;
+    return `🏓 Pong! ● Uptime: ${h}h ${m}m ● Channels: ${totalChs} ● Memory: ${memMB}MB ● Corpus: ${markov.size.toLocaleString()} lines`;
   }
 
-  // ── ?isdown <url> ─────────────────────────────────────────────────────────
-  if (cmd === "isdown") {
-    const rawUrl = (args[0] || "").trim();
-    if (!rawUrl) return `⚠️ Usage: ${PREFIX}isdown <website or domain>`;
+  // ?quote — daily motivational quote via ZenQuotes
+  if (cmd === "quote") {
     const { client } = ctx;
     const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
     const user = (tags.username || "").toLowerCase();
     Promise.resolve().then(async () => {
       try {
-        // Normalise — add https:// if no protocol given
-        const targetUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
-        const domain = new URL(targetUrl).hostname;
-
-        // Use isitdown.rip API — free, no key needed
-        const res = await fetch(`https://isitdown.rip/api/v3/${encodeURIComponent(domain)}`, {
-          headers: { "User-Agent": "shibez-bot/1.0" }
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const res  = await fetch("https://zenquotes.io/api/today", { headers: { "User-Agent": "shibez-bot/1.0" } });
         const data = await res.json();
-
-        if (data.isitdown) {
-          client.say(replyTo, `@${user} 🔴 ${domain} appears to be DOWN for everyone.`).catch(() => {});
-        } else {
-          const responseTime = data.response_time ? ` | Response: ${data.response_time}ms` : "";
-          client.say(replyTo, `@${user} 🟢 ${domain} is UP${responseTime}`).catch(() => {});
-        }
+        const q = data?.[0];
+        if (!q) return client.say(replyTo, `@${user} ⚠️ Couldn't fetch a quote right now.`).catch(() => {});
+        client.say(replyTo, `@${user} 💬 "${q.q}" — ${q.a}`).catch(() => {});
       } catch (e) {
-        client.say(replyTo, `@${user} ⚠️ isdown check failed: ${e.message}`).catch(() => {});
+        client.say(replyTo, `@${user} ⚠️ Quote fetch failed.`).catch(() => {});
       }
     });
     return null;
   }
 
-  // ── ?linecount [-global] [-alltime] [days:<n>] ────────────────────────────
+  // ?offliners — link to y_exp's offliners site
+  if (cmd === "offliners") {
+    const user = (tags.username || "").toLowerCase();
+    return `@${user} 💤 Offliners for #${ch}: https://twitch.yexp.dev/offliners/${ch}`;
+  }
+
+  // ?logs <channel> <user> — best-logs link via ZonianMidian + Supelle's frontend
+  if (cmd === "logs") {
+    const user       = (tags.username || "").toLowerCase();
+    const targetCh   = (args[0] || ch).replace(/^#/, "").toLowerCase().trim();
+    const targetUser = (args[1] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!targetUser) return `⚠️ Usage: ${PREFIX}logs <channel> <user>`;
+    return `@${user} 📋 Logs for @${targetUser} in #${targetCh}: https://logs.zonian.dev/rdr/${targetCh}/${targetUser}?pretty=true`;
+  }
+
+  // ?linecount [user] [-global] [-alltime] [days:1]
   if (cmd === "linecount") {
-    const user    = (tags.username || "").toLowerCase();
-    const msgStats = ctx.msgStats || {};
-    const isGlobal  = args.includes("-global");
-    const isAlltime = args.includes("-alltime");
-    const daysArg   = args.find(a => a.startsWith("days:"));
-    const days      = daysArg ? parseInt(daysArg.slice(5)) : null;
+    const user        = (tags.username || "").toLowerCase();
+    const isGlobal    = args.includes("-global");
+    const daysArg     = args.find(a => a.startsWith("days:"));
+    const days        = daysArg ? parseInt(daysArg.split(":")[1]) : null;
+    const targetUser  = args.find(a => !a.startsWith("-") && !a.startsWith("days:"))
+      ?.toLowerCase().replace(/^@/, "") || user;
+    const { linecount, dailyCount } = ctx;
 
     if (isGlobal) {
-      // Count across all tracked channels
       let total = 0;
-      for (const chData of Object.values(msgStats)) {
-        const entry = chData[user];
-        if (!entry) continue;
-        if (isAlltime || (!daysArg)) {
-          total += entry.total;
-        } else if (days) {
-          const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
-          const cutoffStr = cutoff.toISOString().slice(0, 10);
-          total += entry.daily.filter(d => d.date >= cutoffStr).reduce((s, d) => s + d.count, 0);
-        }
+      for (const chData of Object.values(linecount || {})) total += (chData[targetUser] || 0);
+      return `@${user} 📊 ${targetUser} — ${total.toLocaleString()} messages tracked globally.`;
+    }
+    if (days === 1) {
+      const count = dailyCount?.[ch]?.[targetUser] || 0;
+      return `@${user} 📊 ${targetUser} — ${count.toLocaleString()} messages in #${ch} today.`;
+    }
+    const total = linecount?.[ch]?.[targetUser] || 0;
+    return `@${user} 📊 ${targetUser} — ${total.toLocaleString()} messages in #${ch} (all-time).`;
+  }
+
+  // ?loseroftheday / ?lotd / ?lotw / ?lotm / ?loty
+  if (["loseroftheday", "lotd", "lotw", "lotm", "loty"].includes(cmd)) {
+    const user = (tags.username || "").toLowerCase();
+    const { linecount, dailyCount } = ctx;
+    const isDaily = cmd === "loseroftheday" || cmd === "lotd";
+    const data    = isDaily ? (dailyCount?.[ch] || {}) : (linecount?.[ch] || {});
+    const label   = isDaily ? "today" : "all-time";
+    const entries = Object.entries(data).filter(([, n]) => n > 0);
+    if (entries.length === 0) return `@${user} 📊 No message data yet for #${ch}.`;
+    entries.sort((a, b) => b[1] - a[1]);
+    const [winner, count] = entries[0];
+    const top3 = entries.slice(0, 3).map(([u, n], i) => `${i + 1}. ${u} (${n.toLocaleString()})`).join(" | ");
+    return `@${user} 🥔 Loser of the ${isDaily ? "day" : "week/month/year (all-time)"} in #${ch}: @${winner} (${count.toLocaleString()} msgs ${label}) — ${top3}`;
+  }
+
+  // ?lastline <user>
+  if (cmd === "lastline") {
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}lastline <user>`;
+    const user = (tags.username || "").toLowerCase();
+    const last = ctx.lastMessage?.[ch]?.[target];
+    if (!last) return `@${user} 🔍 No messages from ${target} recorded in #${ch} this session.`;
+    return `@${user} 💬 ${target}'s last line in #${ch}: "${last}"`;
+  }
+
+  // ?firstline <user>
+  if (cmd === "firstline") {
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}firstline <user>`;
+    const user  = (tags.username || "").toLowerCase();
+    const first = ctx.firstline?.[ch]?.[target];
+    if (!first) return `@${user} 🔍 No first-message data for ${target} in #${ch}.`;
+    const when = new Date(first.at).toLocaleDateString("en-GB");
+    return `@${user} 💬 ${target}'s first line in #${ch} (${when}): "${first.text}"`;
+  }
+
+  // ?lastseen <user>
+  if (cmd === "lastseen") {
+    const target = (args[0] || "").toLowerCase().replace(/^@/, "").trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}lastseen <user>`;
+    const user = (tags.username || "").toLowerCase();
+    const seen = ctx.lastseen?.[target];
+    if (!seen) return `@${user} 🔍 ${target} hasn't been seen in any tracked channel.`;
+    const ago = cmdFormatAgo(Date.now() - seen.at);
+    return `@${user} 👁️ ${target} was last seen in #${seen.channel} ${ago} ago.`;
+  }
+
+  // ?isdown <domain or URL>
+  if (cmd === "isdown") {
+    const raw = (args[0] || "").trim();
+    if (!raw) return `⚠️ Usage: ${PREFIX}isdown <domain or URL>`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    const url  = raw.startsWith("http") ? raw : `https://${raw}`;
+    let hostname;
+    try { hostname = new URL(url).hostname; } catch { hostname = raw; }
+    Promise.resolve().then(async () => {
+      try {
+        const start = Date.now();
+        const res   = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(8_000), redirect: "follow" });
+        client.say(replyTo, `@${user} 🌐 ${hostname} — ✅ UP | Status: ${res.status} | Response time: ${Date.now() - start}ms`).catch(() => {});
+      } catch (e) {
+        const reason = (e.name === "TimeoutError" || e.name === "AbortError")
+          ? "timed out after 8s" : e.message;
+        client.say(replyTo, `@${user} 🌐 ${hostname} — ❌ DOWN (${reason})`).catch(() => {});
       }
-      const period = isAlltime ? "all time" : days ? `last ${days} days` : "all time";
-      return `📊 @${user} — ${total.toLocaleString()} messages globally (${period})`;
+    });
+    return null;
+  }
+
+  // ?stock <ticker>
+  if (cmd === "stock") {
+    const ticker = (args[0] || "").toUpperCase().trim();
+    if (!ticker) return `⚠️ Usage: ${PREFIX}stock <ticker> (e.g. ?stock AAPL)`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        const res  = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`,
+          { headers: { "User-Agent": "Mozilla/5.0" } }
+        );
+        const data   = await res.json();
+        const result = data?.chart?.result?.[0];
+        if (!result) return client.say(replyTo, `@${user} ⚠️ Ticker "${ticker}" not found.`).catch(() => {});
+        const meta   = result.meta;
+        const price  = meta.regularMarketPrice;
+        const prev   = meta.previousClose || meta.chartPreviousClose;
+        const change = price - prev;
+        const pct    = ((change / prev) * 100).toFixed(2);
+        const sign   = change >= 0 ? "+" : "";
+        const name   = meta.longName || meta.shortName || ticker;
+        client.say(replyTo,
+          `@${user} ${change >= 0 ? "📈" : "📉"} ${name} (${meta.symbol}) | ${price.toFixed(2)} ${meta.currency || "USD"} | ${sign}${change.toFixed(2)} (${sign}${pct}%)`
+        ).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Stock lookup failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+  // ?crypto <symbol>
+  if (cmd === "crypto") {
+    const symbol = (args[0] || "").toLowerCase().trim();
+    if (!symbol) return `⚠️ Usage: ${PREFIX}crypto <symbol> (e.g. ?crypto BTC)`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        const sRes = await fetch(
+          `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`,
+          { headers: { "User-Agent": "shibez-bot/1.0" } }
+        );
+        const coin = (await sRes.json())?.coins?.[0];
+        if (!coin) return client.say(replyTo, `@${user} ⚠️ Crypto "${symbol.toUpperCase()}" not found.`).catch(() => {});
+        const pRes = await fetch(
+          `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(coin.id)}&vs_currencies=usd&include_24hr_change=true`,
+          { headers: { "User-Agent": "shibez-bot/1.0" } }
+        );
+        const cd = (await pRes.json())[coin.id];
+        if (!cd) return client.say(replyTo, `@${user} ⚠️ Couldn't fetch price for ${coin.name}.`).catch(() => {});
+        const chg  = cd.usd_24h_change ?? 0;
+        const sign = chg >= 0 ? "+" : "";
+        client.say(replyTo,
+          `@${user} ${chg >= 0 ? "📈" : "📉"} ${coin.name} (${coin.symbol.toUpperCase()}) | $${cd.usd.toLocaleString("en-US")} USD | ${sign}${chg.toFixed(2)}% (24h)`
+        ).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Crypto lookup failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+  // ?user [username or ID]
+  if (cmd === "user") {
+    const raw  = (args[0] || "").trim();
+    const user = (tags.username || "").toLowerCase();
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    let target, lookupUrl;
+    if (!raw) {
+      target = user; lookupUrl = `https://api.ivr.fi/v2/twitch/user?login=${encodeURIComponent(user)}`;
+    } else if (/^\d+$/.test(raw)) {
+      target = raw;  lookupUrl = `https://api.ivr.fi/v2/twitch/user?id=${raw}`;
     } else {
-      const entry = (msgStats[ch] || {})[user];
-      if (!entry) return `📊 @${user} — no messages recorded in #${ch} yet.`;
-      let count;
-      if (isAlltime || !daysArg) {
-        count = entry.total;
-      } else if (days) {
-        const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
-        const cutoffStr = cutoff.toISOString().slice(0, 10);
-        count = entry.daily.filter(d => d.date >= cutoffStr).reduce((s, d) => s + d.count, 0);
+      target = raw.replace(/^@/, "").toLowerCase();
+      lookupUrl = `https://api.ivr.fi/v2/twitch/user?login=${encodeURIComponent(target)}`;
+    }
+    Promise.resolve().then(async () => {
+      try {
+        const res = await fetch(lookupUrl, { headers: { "User-Agent": "shibez-bot/1.0" } });
+        const data = await res.json();
+        const u = Array.isArray(data) ? data[0] : (data?.data?.[0] ?? data);
+        if (!u?.login) return client.say(replyTo, `@${user} ⚠️ User "${target}" not found on Twitch.`).catch(() => {});
+        const created  = u.createdAt ? new Date(u.createdAt).toLocaleDateString("en-GB") : "?";
+        const lastLive = u.lastBroadcast?.startedAt
+          ? new Date(u.lastBroadcast.startedAt).toLocaleDateString("en-GB") : "never";
+        const followers = u.followers != null ? Number(u.followers).toLocaleString() : "?";
+        const roles = [];
+        if (u.roles?.isAffiliate) roles.push("Affiliate");
+        if (u.roles?.isPartner)   roles.push("Partner");
+        const roleStr = roles.length ? ` | ${roles.join(", ")}` : "";
+        const banned  = u.banned ? " | 🔨 SUSPENDED" : "";
+        client.say(replyTo,
+          `@${user} 👤 ${u.displayName} (${u.login}) | ID: ${u.id} | Created: ${created} | Followers: ${followers} | Last live: ${lastLive}${roleStr}${banned}`
+        ).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ User lookup failed: ${e.message}`).catch(() => {});
       }
-      const period = isAlltime ? "all time" : days ? `last ${days} days` : "all time";
-      return `📊 @${user} — ${count.toLocaleString()} messages in #${ch} (${period})`;
-    }
+    });
+    return null;
   }
 
-  // ── ?logs <channel> <user> ────────────────────────────────────────────────
-  if (cmd === "logs") {
-    const targetCh   = (args[0] || "").toLowerCase().replace(/^#/, "").trim();
-    const targetUser = (args[1] || "").toLowerCase().replace(/^@/, "").trim();
-    if (!targetCh || !targetUser) return `⚠️ Usage: ${PREFIX}logs <channel> <user>`;
-    // Uses ZonianMidian's best-logs API + Supelle's frontend
-    const viewUrl = `https://logs.supelle.dev/${targetCh}/${targetUser}`;
-    return `📜 Logs for ${targetUser} in #${targetCh}: ${viewUrl}`;
+  // ?isbanned <username>
+  if (cmd === "isbanned") {
+    const target = (args[0] || "").replace(/^@/, "").toLowerCase().trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}isbanned <username>`;
+    const user = (tags.username || "").toLowerCase();
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    Promise.resolve().then(async () => {
+      try {
+        const res  = await fetch(`https://api.ivr.fi/v2/twitch/user?login=${encodeURIComponent(target)}`, {
+          headers: { "User-Agent": "shibez-bot/1.0" },
+        });
+        const data = await res.json();
+        const u    = Array.isArray(data) ? data[0] : (data?.data?.[0] ?? data);
+        if (!u?.login) {
+          return client.say(replyTo, `@${user} 🔍 "${target}" — not found (may be suspended or never existed).`).catch(() => {});
+        }
+        if (u.banned) {
+          return client.say(replyTo, `@${user} 🔨 ${u.displayName} IS currently banned/suspended from Twitch.`).catch(() => {});
+        }
+        client.say(replyTo, `@${user} ✅ ${u.displayName} is NOT banned from Twitch.`).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Ban check failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
   }
 
-  // ── ?loseroftheday / ?lotw / ?lotm / ?loty ───────────────────────────────
-  if (cmd === "loseroftheday" || cmd === "lotd" || cmd === "lotw" || cmd === "lotm" || cmd === "loty") {
-    const msgStats = ctx.msgStats || {};
-    const chData   = msgStats[ch] || {};
-    const user     = (tags.username || "").toLowerCase();
+  // ?founders <channel>
+  if (cmd === "founders") {
+    const targetCh = (args[0] || ch).replace(/^#/, "").toLowerCase().trim();
+    const user = (tags.username || "").toLowerCase();
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    Promise.resolve().then(async () => {
+      try {
+        const res = await fetch(`https://api.ivr.fi/v2/twitch/founders/${encodeURIComponent(targetCh)}`, {
+          headers: { "User-Agent": "shibez-bot/1.0" },
+        });
+        if (!res.ok) {
+          return client.say(replyTo,
+            `@${user} ⚠️ Founders data for #${targetCh} is unavailable — Twitch requires broadcaster auth to access this.`
+          ).catch(() => {});
+        }
+        const data     = await res.json();
+        const founders = Array.isArray(data) ? data : (data?.founders ?? data?.data ?? []);
+        if (!founders.length) return client.say(replyTo, `@${user} 🏅 No founders found for #${targetCh}.`).catch(() => {});
+        const names = founders.slice(0, 10).map(f => f.login || f.displayName || "?").join(", ");
+        const more  = founders.length > 10 ? ` (+${founders.length - 10} more)` : "";
+        client.say(replyTo, `@${user} 🏅 Founders of #${targetCh} (${founders.length}): ${names}${more}`).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Founders lookup failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
 
-    let days, label;
-    if (cmd === "lotw") { days = 7;   label = "week"; }
-    else if (cmd === "lotm") { days = 30;  label = "month"; }
-    else if (cmd === "loty") { days = 365; label = "year"; }
-    else { days = 1; label = "day"; }  // loseroftheday / lotd
+  // ?namecheck <username>
+  if (cmd === "namecheck") {
+    const target = (args[0] || "").replace(/^@/, "").toLowerCase().trim();
+    if (!target) return `⚠️ Usage: ${PREFIX}namecheck <username>`;
+    const user = (tags.username || "").toLowerCase();
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    if (!/^[a-z0-9_]{1,25}$/.test(target))
+      return `@${user} ⚠️ "${target}" is not a valid Twitch username (alphanumeric + underscore, max 25 chars).`;
+    if (!helixGet) return `⚠️ Twitch API not configured (missing TWITCH_CLIENT_ID/SECRET).`;
+    Promise.resolve().then(async () => {
+      try {
+        const data = await helixGet(`users?login=${encodeURIComponent(target)}`);
+        if (!data.data?.length) {
+          client.say(replyTo, `@${user} ✅ "${target}" appears to be available on Twitch!`).catch(() => {});
+        } else {
+          const u = data.data[0];
+          client.say(replyTo,
+            `@${user} ❌ "${target}" is taken — registered to ${u.display_name} (created ${new Date(u.created_at).toLocaleDateString("en-GB")}).`
+          ).catch(() => {});
+        }
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Name check failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
 
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-
-    // Sum messages per user within the period
-    const counts = {};
-    for (const [u, entry] of Object.entries(chData)) {
-      const total = entry.daily
-        .filter(d => d.date >= cutoffStr)
-        .reduce((s, d) => s + d.count, 0);
-      if (total > 0) counts[u] = total;
-    }
-
-    if (Object.keys(counts).length === 0) {
-      return `📊 No message data yet for #${ch} this ${label}.`;
-    }
-
-    const sorted  = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-    const [loser, count] = sorted[0];
-    const runnerUp = sorted[1] ? ` (2nd: ${sorted[1][0]} with ${sorted[1][1].toLocaleString()})` : "";
-    return `🗑️ Loser of the ${label} in #${ch}: ${loser} with ${count.toLocaleString()} messages${runnerUp}`;
+  // ?randomclip <channel> [game:<game>] [-day|-week|-month|-year]
+  if (cmd === "randomclip") {
+    if (!helixGet) return `⚠️ Twitch API not configured (missing TWITCH_CLIENT_ID/SECRET).`;
+    const user = (tags.username || "").toLowerCase();
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    // First arg is channel only if it doesn't look like a flag or game: arg
+    const hasChArg = args[0] && !args[0].startsWith("-") && !args[0].startsWith("game:");
+    const targetCh = hasChArg ? args[0].replace(/^#/, "").toLowerCase() : ch;
+    const restArgs = hasChArg ? args.slice(1) : args;
+    const gameArg  = restArgs.find(a => a.startsWith("game:"))?.slice(5)?.trim() || null;
+    const period   = restArgs.find(a => ["-day","-week","-month","-year"].includes(a)) || null;
+    Promise.resolve().then(async () => {
+      try {
+        const bcData        = await helixGet(`users?login=${encodeURIComponent(targetCh)}`);
+        const broadcasterId = bcData.data?.[0]?.id;
+        if (!broadcasterId) return client.say(replyTo, `@${user} ⚠️ Channel #${targetCh} not found.`).catch(() => {});
+        const qp = [`broadcaster_id=${broadcasterId}`, `first=100`];
+        if (period) {
+          const ms = { "-day": 86_400_000, "-week": 604_800_000, "-month": 2_592_000_000, "-year": 31_536_000_000 };
+          qp.push(`started_at=${new Date(Date.now() - ms[period]).toISOString()}`);
+        }
+        if (gameArg) {
+          const gd = await helixGet(`games?name=${encodeURIComponent(gameArg)}`);
+          if (gd.data?.[0]?.id) qp.push(`game_id=${gd.data[0].id}`);
+        }
+        const clips = (await helixGet(`clips?${qp.join("&")}`)).data || [];
+        if (!clips.length) {
+          const pLabel = period ? ` in the last ${period.slice(1)}` : "";
+          return client.say(replyTo, `@${user} 🎬 No clips found for #${targetCh}${pLabel}.`).catch(() => {});
+        }
+        const clip = clips[Math.floor(Math.random() * clips.length)];
+        client.say(replyTo,
+          `@${user} 🎬 "${clip.title}" by ${clip.creator_name} (${clip.view_count.toLocaleString()} views) | ${clip.url}`
+        ).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Clip lookup failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1548,3 +1777,14 @@ function handleSongCommand(channel, ch, tags, ctx) {
 }
 
 module.exports = { handle, isOwner, isModOrVip, isBroadcaster, PREFIX };
+
+// ── Local helper — mirrors formatAgo from index.js ───────────────────────────
+function cmdFormatAgo(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 60)  return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60)  return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24)  return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
