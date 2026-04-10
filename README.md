@@ -80,7 +80,7 @@ All commands use the `?` prefix.
 
 ---
 
-### 🔧 Mods / VIPs / Broadcaster
+### 🔧 Broadcaster / Mods
 
 Everything above, plus:
 
@@ -136,7 +136,7 @@ Everything above, plus cross-channel control:
 ?followage username         → 📅 following for 2 years, 3 months
 ?top                        → 🔤 Top words: bro (412), lmao (388), chat (301).
 ?status                     → 📊 #shlbez: ▶ posting | Every: 60s | Min messages: none | Corpus: 50,000 lines | Online-only: on
-?lines                      → 📚 Lines: 50000 trained.
+?lines                      → 📚 Lines: 100000 trained.
 ?interval 120               → post every 2 minutes
 ?cooldown 5                 → wait for 5 other messages before posting again
 ?cooldown 0                 → disable message cooldown
@@ -262,5 +262,4 @@ twitch-markov-bot/
 
 ---
 
-> Make sure the bot follows [Twitch's Terms of Service](https://www.twitch.tv/p/legal/terms-of-service/).
-> Always get permission before running the bot in someone else's channel.
+> Bot follows the [Twitch's Terms of Service](https://www.twitch.tv/p/legal/terms-of-service/).
