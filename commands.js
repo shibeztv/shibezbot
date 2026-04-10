@@ -1632,22 +1632,23 @@ function handle(channel, tags, message, ctx) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const xml = await res.text();
 
-        // Parse <item> blocks from RSS XML
-        const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 3);
+        // Parse the first <item> block from RSS XML
+        const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
         if (!items.length) {
           return client.say(replyTo, `@${user} 🔍 No news found for "${query}".`).catch(() => {});
         }
 
-        const headlines = items.map((m, i) => {
-          const titleMatch  = m[1].match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) ||
-                              m[1].match(/<title>(.*?)<\/title>/);
-          const sourceMatch = m[1].match(/<source[^>]*>(.*?)<\/source>/);
-          let title  = (titleMatch?.[1] || "").replace(/\s*-\s*[^-]+$/, "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').trim();
-          const source = sourceMatch?.[1]?.trim() || "";
-          return `${i + 1}. ${title}${source ? ` (${source})` : ""}`;
-        }).join(" | ");
+        const m = items[0];
+        const titleMatch  = m[1].match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) ||
+                            m[1].match(/<title>(.*?)<\/title>/);
+        const sourceMatch = m[1].match(/<source[^>]*>(.*?)<\/source>/);
+        const linkMatch   = m[1].match(/<link>(.*?)<\/link>/);
+        const title  = (titleMatch?.[1] || "").replace(/\s*-\s*[^-]+$/, "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').trim();
+        const source = sourceMatch?.[1]?.trim() || "";
+        const link   = (linkMatch?.[1] || "").trim();
 
-        client.say(replyTo, `@${user} 📰 ${query}: ${headlines}`.slice(0, 499)).catch(() => {});
+        const out = `@${user} 📰 ${title}${source ? ` (${source})` : ""}${link ? ` | ${link}` : ""}`;
+        client.say(replyTo, out.slice(0, 499)).catch(() => {});
       } catch (e) {
         client.say(replyTo, `@${user} ⚠️ News fetch failed: ${e.message}`).catch(() => {});
       }
@@ -1674,9 +1675,9 @@ function handle(channel, tags, message, ctx) {
             messages: [
               {
                 role: "system",
-                content: "You are a fun facts bot for Twitch chat. Give ONE surprising, specific, and interesting fact about the topic. Keep it under 200 characters. No markdown, no bullet points, no intro like 'Here is a fact:'. Just the fact itself.",
+                content: "You are a fun facts bot for Twitch chat. Reply with exactly ONE sentence — a single surprising and specific fact about the topic. No lists, no bullet points, no numbering, no intro phrases like 'Did you know' or 'Here is a fact'. Just one plain sentence.",
               },
-              { role: "user", content: `Tell me a cool fact about: ${topic}` },
+              { role: "user", content: `Give me one cool fact about: ${topic}` },
             ],
             max_tokens: 100,
             temperature: 0.9,
