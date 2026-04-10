@@ -39,10 +39,9 @@ All commands use the `?` prefix.
 | `?roll <sides>` | Roll a die — e.g. `?roll 20` rolls 1d20, `?roll 2d6` rolls two 6-sided dice |
 | `?choose <a> or <b>` | Bot picks one option randomly from a list separated by "or" |
 | `?coinflip` | Flip a coin |
-| `?forsenalert` | Subscribe to forsen MC god run pings — bot @-mentions you when forsen hits a good run |
-| `?forsenalert off` | Unsubscribe from forsen MC god run pings |
+| `?forsenalert` | Subscribe/unsubscribe to forsen MC god run pings — bot @-mentions you when forsen hits a good run |
 | `?forsenrun` | Show forsen's current Minecraft speedrun time and structure (only works when forsen is live) |
-| `?bancheck <user>` | Look up a user's ban history — shows full details if available, or flags as likely banned if the lookup is blocked |
+| `?bancheck <user>` | Look up a user's ban history on betterbanned.com |
 | `?botcheck <channel>` | Check a live channel's viewer/follower ratio for bot activity |
 | `?lines` | Show current corpus line count |
 | `?followage <user>` | Show how long a user has been following this channel |
@@ -56,25 +55,27 @@ All commands use the `?` prefix.
 | `?notify list` | Show subscriber counts for each notification type |
 | `?ping` | Bot status: uptime, memory, channels, corpus size |
 | `?quote` | Get today's motivational quote |
+| `?news <topic>` | Top 3 current news headlines for any search term |
+| `?coolfact <topic>` | Get a surprising fact about any word, country, or topic |
 | `?offliners` | Link to y_exp's Offliners site |
-| `?logs <channel> <user>` | Get a link to chatlogs for a channel/user pair (ZonianMidian's best-logs + Supelle's frontend) |
-| `?linecount [user] [-global] [days:1]` | Show how many messages a user has sent in this channel or globally |
-| `?loseroftheday` | Top chatter today in this channel |
-| `?lotw` / `?lotm` / `?loty` | Top chatter all-time (weekly/monthly/yearly aliases, uses all-time data) |
-| `?lastline <user> [channel]` | Last message a user sent in a channel (current session) |
-| `?firstline <user> [channel]` | First message a user ever sent in a channel (tracked since bot joined) |
+| `?logs <channel> <user>` | Link to chatlogs via ZonianMidian's best-logs + Supelle's frontend |
+| `?linecount [user] [-global] [days:1]` | How many messages a user has sent in this channel or globally |
+| `?loseroftheday` / `?lotd` | Top chatter today in this channel |
+| `?lotw` / `?lotm` / `?loty` | Top chatter all-time (aliases) |
+| `?lastline <user> [channel]` | Last message a user sent (current session) |
+| `?firstline <user> [channel]` | First message a user ever sent in a channel |
 | `?lastseen <user>` | When and where a user was last seen |
 | `?isdown <domain>` | Check if a website is up or down |
 | `?stock <ticker>` | Current stock price and daily change (e.g. `?stock AAPL`) |
 | `?crypto <symbol>` | Current crypto price and 24h change (e.g. `?crypto BTC`) |
-| `?user [username]` | Twitch user info — creation date, followers, last live, partner status |
+| `?user [username]` | Twitch user info — creation date, followers, last live, partner/affiliate status |
 | `?isbanned <username>` | Check if a Twitch account is banned/suspended, with reason and duration if available |
-| `?founders <channel>` | List the founders of a channel (requires broadcaster auth — may be unavailable) |
+| `?founders <channel>` | List the founders of a channel |
 | `?namecheck <username>` | Check if a Twitch username is available (also catches suspended accounts) |
-| `?randomclip <channel> [game:<game>] [-day\|-week\|-month\|-year]` | Get a random clip from a channel |
-| `?trumptweet` | Get the latest post from Trump's Truth Social |
-| `?forsentweet` | Get forsen's latest tweet from X |
-| `?randomemote` / `?ra` | Post a random emote from the current channel (7TV, BTTV, FFZ) |
+| `?randomclip <channel> [game:<game>] [-day\|-week\|-month\|-year]` | Random clip from a channel |
+| `?trumptweet` | Latest post from Trump's Truth Social |
+| `?forsentweet` | forsen's latest tweet from X |
+| `?randomemote` / `?ra` | Post a random emote from this channel (7TV, BTTV, FFZ) |
 
 ---
 
@@ -104,9 +105,7 @@ Everything above, plus cross-channel control:
 
 | Command | What it does |
 |---|---|
-| `?forsenalert add <user> [channel]` | Add a user to forsen alert subscribers in a channel (defaults to current channel) |
-| `?forsenalert remove <user> [channel]` | Remove a user from forsen alert subscribers |
-| `?forsenalert list [channel]` | List all forsen alert subscribers in a channel |
+| `?join <channel>` | Join any channel and auto-post there |
 | `?leave <channel>` | Leave any post channel |
 | `?manual <channel>` | Join any channel in manual mode (no auto-posting) |
 | `?unmanual <channel>` | Leave any manual channel |
@@ -136,7 +135,7 @@ Everything above, plus cross-channel control:
 ?followage username         → 📅 following for 2 years, 3 months
 ?top                        → 🔤 Top words: bro (412), lmao (388), chat (301).
 ?status                     → 📊 #shlbez: ▶ posting | Every: 60s | Min messages: none | Corpus: 50,000 lines | Online-only: on
-?lines                      → 📚 Lines: 100000 trained.
+?lines                      → 📚 Lines: 50000 trained.
 ?interval 120               → post every 2 minutes
 ?cooldown 5                 → wait for 5 other messages before posting again
 ?cooldown 0                 → disable message cooldown
@@ -146,6 +145,34 @@ Everything above, plus cross-channel control:
 ?onlineonly                 → toggle online-only posting mode
 ?notify live on             → get pinged when this channel goes live
 ?notify list                → 🔔 #shlbez — 🔴 live: 3 | ⚫ offline: 1 | 🎮 category: 2
+?ping                   → 🏓 Pong! ● Uptime: 9h 14m ● Channels: 5 ● Memory: 82.3MB ● Corpus: 100,000 lines
+?quote                  → 💬 "The only way to do great work is to love what you do." — Steve Jobs
+?news finland           → 📰 News — finland: 1. Finland joins NATO exercise (Reuters) | 2. Finnish PM visits US (BBC) | 3. Helsinki hosts summit (AP)
+?news xqc               → 📰 News — xqc: 1. xQc signs new streaming deal (Dexerto) | ...
+?coolfact finland       → 💡 Finland has more saunas than cars — roughly 3 million saunas for 5.5 million people.
+?coolfact sharks        → 💡 Sharks are older than trees — they've existed for ~450 million years, while trees appeared ~350 million years ago.
+?offliners              → 💤 Offliners: https://twitch.yexp.dev/offliners/
+?logs shlbez xqc        → 📋 Logs for @xqc in #shlbez: https://logs.zonian.dev/rdr/shlbez/xqc?pretty=true
+?linecount              → 📊 shlbez — 4,201 messages in #shlbez (all-time).
+?linecount viewer1 -global → 📊 viewer1 — 12,500 messages tracked globally.
+?linecount days:1       → 📊 shlbez — 42 messages in #shlbez today.
+?loseroftheday          → OMEGALUL Loser of the day in #shlbez: @viewer1 (412 msgs today)
+?lastline viewer1           → 💬 viewer1's last line in #shlbez: "this run is insane bro"
+?lastline viewer1 forsen    → 💬 viewer1's last line in #forsen: "monkaS"
+?firstline viewer1          → 💬 viewer1's first line in #shlbez (01/01/2024): "hello chat"
+?lastseen viewer1       → 👁️ viewer1 was last seen in #shlbez 3h ago.
+?isdown twitch.tv       → 🌐 twitch.tv — ✅ UP | Status: 200 | Response time: 142ms
+?stock AAPL             → 📈 Apple Inc. (AAPL) | 204.10 USD | +2.38 (+1.18%)
+?crypto BTC             → 📈 BTC | $65,432 USD | +2.50% (24h)
+?user xqc               → 👤 xQc (xqc) | ID: 71092938 | Created: 12/01/2018 | Followers: 11,200,000 | Partner
+?isbanned someguy       → 🔨 someguy IS suspended from Twitch | Reason: not publicly available | Duration: permanent
+?namecheck coolname     → ✅ "coolname" appears to be available on Twitch!
+?namecheck shibez       → ❌ "shibez" is not available — account exists but is currently suspended.
+?founders shlbez        → 🏅 Founders of #shlbez (3): viewer1, viewer2, viewer3
+?randomclip forsen -week → 🎬 "insane run" by clipperguy (4,201 views) | https://clips.twitch.tv/...
+?trumptweet             → 🇺🇸 Trump (08/04/2026): MAKE AMERICA GREAT AGAIN! | https://truthsocial.com/...
+?forsentweet            → 🐦 forsen (07/04/2026): forsenE | https://x.com/forsen/status/...
+?randomemote / ?ra      → Pepega
 ?roll 20                    → 🎲 @shlbez rolled 1d20: 17
 ?roll 2d6                   → 🎲 @shlbez rolled 2d6: 9 (4 + 5)
 ?choose forsen or xqc       → 🤔 @shlbez I choose: xqc
@@ -154,45 +181,9 @@ Everything above, plus cross-channel control:
 ?translate como estas       → @shlbez 🌐 how are you
 ?watchtime shlbez           → 👁️ shlbez has been watching #shlbez for 12h 30m.
 ?watchtime viewer1 shlbez   → 👁️ viewer1 has watched #shlbez for 5h 20m.
-?forsenalert             → forsenE You're subscribed to forsen MC god run alerts in #shlbez! Type ?forsenalert off to unsubscribe.
-?forsenalert off         → 🔕 Unsubscribed from forsen MC run alerts in #shlbez.
-?forsenalert add viewer1          → ✅ Added viewer1 to forsen alerts in #shlbez.
-?forsenalert add viewer1 jaskuz   → ✅ Added viewer1 to forsen alerts in #jaskuz.
-?forsenalert remove viewer1       → ✅ Removed viewer1 from forsen alerts in #shlbez.
-?forsenalert list                 → forsenE #shlbez alert subs (2): bolsogoat, viewer1
-?forsenalert list jaskuz          → forsenE #jaskuz alert subs (1): koljake
-?ping                   → 🏓 Pong! ● Uptime: 9h 14m ● Channels: 5 ● Memory: 82.3MB ● Corpus: 50,000 lines
-?quote                  → 💬 "The only way to do great work is to love what you do." — Steve Jobs
-?offliners              → 💤 Offliners: https://twitch.yexp.dev/offliners/
-?logs shlbez xqc        → 📋 Logs for @xqc in #shlbez: https://logs.zonian.dev/rdr/shlbez/xqc?pretty=true
-?linecount              → 📊 shlbez — 4,201 messages in #shlbez (all-time).
-?linecount viewer1 -global → 📊 viewer1 — 12,500 messages tracked globally.
-?linecount days:1       → 📊 shlbez — 42 messages in #shlbez today.
-?loseroftheday          → OMEGALUL Loser of the day in #shlbez: @viewer1 (412 msgs today) — 1. viewer1 (412) | 2. viewer2 (301) | 3. viewer3 (188)
-?lastline viewer1           → 💬 viewer1's last line in #shlbez: "this run is insane bro"
-?lastline viewer1 forsen    → 💬 viewer1's last line in #forsen: "monkaS"
-?firstline viewer1          → 💬 viewer1's first line in #shlbez (01/01/2024): "hello chat"
-?firstline viewer1 nymn     → 💬 viewer1's first line in #nymn (03/11/2023): "hi nymn"
-?lastseen viewer1       → 👁️ viewer1 was last seen in #shlbez 3h ago.
-?isdown twitch.tv       → 🌐 twitch.tv — ✅ UP | Status: 200 | Response time: 142ms
-?stock AAPL             → 📈 Apple Inc. (AAPL) | 204.10 USD | +2.38 (+1.18%)
-?crypto BTC             → 📈 BTC | $65,432 USD | +2.50% (24h)
-?user xqc               → 👤 xQc (xqc) | ID: 71092938 | Created: 12/01/2018 | Followers: 11,200,000 | Last live: 07/04/2026 | Partner
-?isbanned someguy       → 🔨 someguy IS suspended from Twitch since 01/01/2023 | Reason: not publicly available | Duration: permanent
-?namecheck coolname     → ✅ "coolname" appears to be available on Twitch!
-?namecheck xqc          → ❌ "xqc" is taken — registered to xQc (created 12/01/2018).
-?namecheck shibez       → ❌ "shibez" is not available — account exists but is currently suspended.
-?founders shlbez        → 🏅 Founders of #shlbez (3): viewer1, viewer2, viewer3
-?randomclip forsen      → 🎬 "insane speedrun moment" by clipperguy (4,201 views) | https://clips.twitch.tv/...
-?randomclip forsen -week → 🎬 Random clip from the last week
-?randomclip forsen game:Minecraft → 🎬 Random Minecraft clip from forsen
-?trumptweet             → 🇺🇸 Trump (08/04/2026): MAKE AMERICA GREAT AGAIN! | https://truthsocial.com/...
-?forsentweet            → 🐦 forsen (07/04/2026): forsenE | https://x.com/forsen/status/...
-?randomemote            → Pepega
-?ra                     → forsenE
+?forsenalert             → forsenE You're subscribed to forsen MC god run alerts!
 ?forsenrun               → 🎮 forsen MC run — ⏱️ 9m 32s | Real: 10m 1s | 📍 Nether
 ?bancheck xqc               → 🔨 xqc — 3 bans | Last: 12/01/2024 | Reason: hateful conduct | Duration: 30 days
-?bancheck bannedguy         → 🔨 bannedguy — account is likely banned/suspended. Check: betterbanned.com/en/streamer/bannedguy
 ?botcheck suspiciousguy     → 🤖 #suspiciousguy: 1,840 viewers | 120 followers | ratio 15.33 | channel age: 14d | 🚨 SUSPICIOUS
 ?join xqc                   → also post in xQc's chat (owner only)
 ?addlearn hasanabi          → learn from hasanabi's chat silently (owner only)
@@ -240,7 +231,7 @@ twitch-markov-bot/
 ├── seed.txt            # Your seed corpus
 ├── Dockerfile          # For Railway — installs ffmpeg + yt-dlp
 ├── bot_state.json      # Auto-generated: saved settings
-├── learned_corpus.txt  # Auto-generated: chat lines learned live (capped at 50k)
+├── learned_corpus.txt  # Auto-generated: chat lines learned live (capped at 100k)
 ├── .env                # Your secrets (never commit this)
 ├── .env.example        # Config template
 └── package.json

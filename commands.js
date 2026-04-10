@@ -719,7 +719,7 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "commands") {
     const user = (tags.username || "").toLowerCase();
-    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | roll | choose | coinflip | forsenalert | forsenrun | bancheck | botcheck | ping | quote | offliners | logs | linecount | loseroftheday | lastline | firstline | lastseen | isdown | stock | crypto | user | isbanned | founders | namecheck | randomclip | trumptweet | forsentweet | randomemote (ra) | notify | lines | top | status | help`;
+    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | roll | choose | coinflip | forsenalert | forsenrun | bancheck | botcheck | ping | quote | news | coolfact | offliners | logs | linecount | loseroftheday | lastline | firstline | lastseen | isdown | stock | crypto | user | isbanned | founders | namecheck | randomclip | trumptweet | forsentweet | randomemote (ra) | notify | lines | top | status | help`;
   }
 
   if (cmd === "howtoadd") {
@@ -1559,52 +1559,169 @@ function handle(channel, tags, message, ctx) {
     return null;
   }
 
-  // ?trumptweet — latest post from Trump's Truth Social via rss2json proxy
-  if (cmd === "trumptweet") {
+  // ?news <query> — top news headlines for a search term via Google News RSS
+  if (cmd === "news") {
+    const query = args.join(" ").trim();
+    if (!query) return `⚠️ Usage: ${PREFIX}news <topic>  e.g. ?news Finland`;
     const { client } = ctx;
     const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
     const user = (tags.username || "").toLowerCase();
     Promise.resolve().then(async () => {
       try {
-        // Route through rss2json.com — their servers fetch Truth Social's RSS,
-        // bypassing Railway's datacenter IP block from Cloudflare
-        const rssUrl = encodeURIComponent("https://truthsocial.com/@realDonaldTrump.rss");
-        const res    = await fetch(
-          `https://api.rss2json.com/v1/api.json?rss_url=${rssUrl}&count=1`,
+        const rssUrl = encodeURIComponent(
+          `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`
+        );
+        const res  = await fetch(
+          `https://api.rss2json.com/v1/api.json?rss_url=${rssUrl}&count=3`,
           { headers: { "User-Agent": "shibez-bot/1.0" }, signal: AbortSignal.timeout(10_000) }
         );
-        if (!res.ok) throw new Error(`rss2json HTTP ${res.status}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (data.status !== "ok" || !data.items?.length) {
-          throw new Error(data.message || "no items");
+          return client.say(replyTo, `@${user} 🔍 No news found for "${query}".`).catch(() => {});
         }
-        const item = data.items[0];
-        const text = (item.description || item.title || "")
-          .replace(/<br\s*\/?>/gi, " ")
-          .replace(/<[^>]+>/g, "")
-          .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-          .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
-          .replace(/\s+/g, " ").trim();
-        const date = item.pubDate ? new Date(item.pubDate).toLocaleDateString("en-GB") : "?";
-        const link = item.link || item.guid || "https://truthsocial.com/@realDonaldTrump";
-        client.say(replyTo,
-          `@${user} 🇺🇸 Trump (${date}): ${text} | ${link}`.slice(0, 499)
-        ).catch(() => {});
+        // Show up to 3 headlines, each with source and clean title
+        const headlines = data.items.slice(0, 3).map((item, i) => {
+          const title  = (item.title || "")
+            .replace(/\s*-\s*[^-]+$/, "") // strip "- Source Name" suffix Google adds
+            .replace(/&amp;/g, "&").replace(/&quot;/g, '"').trim();
+          const source = item.author || data.feed?.title || "";
+          return `${i + 1}. ${title}${source ? ` (${source})` : ""}`;
+        }).join(" | ");
+        client.say(replyTo, `@${user} 📰 News — ${query}: ${headlines}`.slice(0, 499)).catch(() => {});
       } catch (e) {
-        client.say(replyTo, `@${user} ⚠️ Couldn't fetch Trump's latest Truth Social post: ${e.message}`).catch(() => {});
+        client.say(replyTo, `@${user} ⚠️ News fetch failed: ${e.message}`).catch(() => {});
       }
     });
     return null;
   }
 
-  // ?forsentweet — latest tweet from forsen's X account via rss2json → nitter proxy
+  // ?coolfact <topic> — one interesting fact via Groq
+  if (cmd === "coolfact") {
+    const topic = args.join(" ").trim();
+    if (!topic) return `⚠️ Usage: ${PREFIX}coolfact <word or topic>  e.g. ?coolfact Finland`;
+    const GROQ_API_KEY = process.env.GROQ_API_KEY;
+    if (!GROQ_API_KEY) return `⚠️ GROQ_API_KEY not set — ?coolfact is disabled.`;
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      try {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
+          body: JSON.stringify({
+            model: "llama-3.1-8b-instant",
+            messages: [
+              {
+                role: "system",
+                content: "You are a fun facts bot for Twitch chat. Give ONE surprising, specific, and interesting fact about the topic. Keep it under 200 characters. No markdown, no bullet points, no intro like 'Here is a fact:'. Just the fact itself.",
+              },
+              { role: "user", content: `Tell me a cool fact about: ${topic}` },
+            ],
+            max_tokens: 100,
+            temperature: 0.9,
+          }),
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message);
+        const fact = data?.choices?.[0]?.message?.content?.trim();
+        if (!fact) throw new Error("no response");
+        client.say(replyTo, `@${user} 💡 ${fact}`.slice(0, 499)).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Couldn't fetch a fact: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
+  // ?trumptweet — latest post from Trump's Truth Social
+  if (cmd === "trumptweet") {
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    const user = (tags.username || "").toLowerCase();
+    Promise.resolve().then(async () => {
+      const HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/rss+xml, application/xml, text/xml, */*",
+      };
+
+      function parseTruthRss(xml) {
+        const items = xml.split("<item>");
+        if (items.length < 2) return null;
+        const item = items[1];
+        const titleM = item.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/);
+        const dateM  = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+        const linkM  = item.match(/<link>([\s\S]*?)<\/link>/)
+                    || item.match(/<guid[^>]*>([\s\S]*?)<\/guid>/);
+        if (!titleM) return null;
+        const text = titleM[1]
+          .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
+          .trim();
+        const date = dateM ? new Date(dateM[1].trim()).toLocaleDateString("en-GB") : "?";
+        const link = (linkM ? linkM[1] : "https://truthsocial.com/@realDonaldTrump").trim();
+        return { text, date, link };
+      }
+
+      // Try 1: Truth Social RSS (most reliable, no auth needed)
+      const RSS_URLS = [
+        "https://truthsocial.com/@realDonaldTrump.rss",
+        "https://truthsocial.com/users/realDonaldTrump.rss",
+      ];
+      for (const rssUrl of RSS_URLS) {
+        try {
+          const res = await fetch(rssUrl, {
+            headers: HEADERS,
+            signal: AbortSignal.timeout(8_000),
+          });
+          if (!res.ok) continue;
+          const xml  = await res.text();
+          const item = parseTruthRss(xml);
+          if (!item || !item.text || item.text.length < 3) continue;
+          return client.say(replyTo,
+            `@${user} 🇺🇸 Trump (${item.date}): ${item.text} | ${item.link}`.slice(0, 499)
+          ).catch(() => {});
+        } catch (_) { continue; }
+      }
+
+      // Try 2: Mastodon-compatible API (may be rate-limited for non-browser requests)
+      const API_IDS = ["107780257626128497", "1"];
+      for (const id of API_IDS) {
+        try {
+          const res = await fetch(
+            `https://truthsocial.com/api/v1/accounts/${id}/statuses?limit=1&exclude_replies=true&exclude_reblogs=true`,
+            { headers: HEADERS, signal: AbortSignal.timeout(8_000) }
+          );
+          if (!res.ok) continue;
+          const data = await res.json();
+          const post = Array.isArray(data) ? data[0] : null;
+          if (!post) continue;
+          const text = (post.content || "")
+            .replace(/<br\s*\/?>/gi, " ").replace(/<[^>]+>/g, "")
+            .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+          if (!text) continue;
+          const date = post.created_at ? new Date(post.created_at).toLocaleDateString("en-GB") : "?";
+          const url  = post.url || "https://truthsocial.com/@realDonaldTrump";
+          return client.say(replyTo,
+            `@${user} 🇺🇸 Trump (${date}): ${text} | ${url}`.slice(0, 499)
+          ).catch(() => {});
+        } catch (_) { continue; }
+      }
+
+      client.say(replyTo, `@${user} ⚠️ Couldn't fetch Trump's latest Truth Social post right now.`).catch(() => {});
+    });
+    return null;
+  }
+
+  // ?forsentweet — latest tweet from forsen's X account via nitter RSS
   if (cmd === "forsentweet") {
     const { client } = ctx;
     const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
     const user = (tags.username || "").toLowerCase();
     Promise.resolve().then(async () => {
-      // Route nitter RSS through rss2json.com to bypass Railway's datacenter IP block.
-      // Try multiple nitter instances until one works.
+      // Up-to-date nitter instance list — ordered by reliability
       const NITTER_INSTANCES = [
         "https://nitter.poast.org",
         "https://nitter.privacydev.net",
@@ -1614,41 +1731,63 @@ function handle(channel, tags, message, ctx) {
         "https://lightbrd.com",
         "https://xcancel.com",
         "https://nitter.unixfox.eu",
+        "https://nitter.esmailelbob.xyz",
+        "https://nitter.projectsegfau.lt",
+        "https://nitter.rawbit.ninja",
+        "https://nitter.moomoo.me",
         "https://nitter.1d4.us",
         "https://nitter.kavin.rocks",
       ];
+      const HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept":     "application/rss+xml, application/xml, text/xml",
+      };
 
+      function parseFirstRssItem(xml) {
+        const items = xml.split("<item>");
+        if (items.length < 2) return null;
+        const item = items[1];
+        const titleMatch = item.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/)
+          || item.match(/<title>([\s\S]*?)<\/title>/);
+        const dateMatch  = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+        const linkMatch  = item.match(/<link>([\s\S]*?)<\/link>/);
+        if (!titleMatch) return null;
+        const text = titleMatch[1]
+          .replace(/^R to @\S+:\s*/i, "")   // strip "R to @user:" reply prefix
+          .replace(/^RT by @\S+:\s*/i, "")  // strip RT prefix
+          .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
+          .replace(/\s+/g, " ").trim();
+        const date = dateMatch ? new Date(dateMatch[1].trim()).toLocaleDateString("en-GB") : "?";
+        // Always rewrite to x.com regardless of which nitter instance served it
+        const link = (linkMatch ? linkMatch[1] : "")
+          .replace(/https?:\/\/[^/]+\//, "https://x.com/").trim();
+        return { text, date, link };
+      }
+
+      // Try each nitter instance with a short per-instance timeout
       for (const instance of NITTER_INSTANCES) {
         try {
-          const rssUrl = encodeURIComponent(`${instance}/forsen/rss`);
-          const res    = await fetch(
-            `https://api.rss2json.com/v1/api.json?rss_url=${rssUrl}&count=1`,
-            { headers: { "User-Agent": "shibez-bot/1.0" }, signal: AbortSignal.timeout(10_000) }
-          );
+          const res = await fetch(`${instance}/forsen/rss`, {
+            headers: HEADERS,
+            signal:  AbortSignal.timeout(5_000),
+          });
           if (!res.ok) continue;
-          const data = await res.json();
-          if (data.status !== "ok" || !data.items?.length) continue;
-          const item = data.items[0];
-          const text = (item.title || item.description || "")
-            .replace(/<[^>]+>/g, "")
-            .replace(/^R to @\S+:\s*/i, "")
-            .replace(/^RT by @\S+:\s*/i, "")
-            .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-            .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
-            .replace(/\s+/g, " ").trim();
-          if (!text || text.length < 3) continue;
-          const date = item.pubDate ? new Date(item.pubDate).toLocaleDateString("en-GB") : "?";
-          // Rewrite nitter link to x.com
-          const link = (item.link || item.guid || "").replace(/https?:\/\/[^/]+\//, "https://x.com/").trim();
+          const xml  = await res.text();
+          // Quick sanity check — dead instances return HTML login pages
+          if (!xml.includes("<rss") && !xml.includes("<feed")) continue;
+          const item = parseFirstRssItem(xml);
+          if (!item || !item.text || item.text.length < 3) continue;
           client.say(replyTo,
-            `@${user} 🐦 forsen (${date}): ${text}${link ? ` | ${link}` : ""}`.slice(0, 499)
+            `@${user} 🐦 forsen (${item.date}): ${item.text}${item.link ? ` | ${item.link}` : ""}`.slice(0, 499)
           ).catch(() => {});
           return;
         } catch (_) { continue; }
       }
 
+      // All nitter instances failed
       client.say(replyTo,
-        `@${user} 🐦 Couldn't fetch forsen's latest tweet right now. Check: https://x.com/forsen`
+        `@${user} 🐦 Couldn't fetch forsen's latest tweet right now. Check manually: https://x.com/forsen`
       ).catch(() => {});
     });
     return null;
