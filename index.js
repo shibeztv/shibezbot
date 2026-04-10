@@ -85,7 +85,7 @@ if (fs.existsSync(SEED_FILE)) {
 const DATA_DIR     = process.env.DATA_DIR || ".";
 const LEARNED_FILE = path.join(DATA_DIR, "learned_corpus.txt");
 
-const CORPUS_LOAD_LIMIT = 50_000;  // cap startup load to avoid OOM on low-RAM hosts
+const CORPUS_LOAD_LIMIT = 100_000;  // cap startup load to avoid OOM on low-RAM hosts
 if (fs.existsSync(LEARNED_FILE)) {
   let lines = fs.readFileSync(LEARNED_FILE, "utf8")
     .split("\n").map(l => l.trim()).filter(Boolean);
@@ -624,8 +624,8 @@ setInterval(() => {
   console.log(`💾  Saved ${newLines.length} new lines. Total corpus: ${markov.size}`);
   newLines.length = 0;
   // Trim the file if it has grown too large to avoid OOM on next restart
-  const CORPUS_TRIM_AT   = 60_000;
-  const CORPUS_TRIM_TO   = 50_000;
+  const CORPUS_TRIM_AT   = 120_000;
+  const CORPUS_TRIM_TO   = 100_000;
   try {
     const allLines = fs.readFileSync(LEARNED_FILE, "utf8").split("\n").filter(Boolean);
     if (allLines.length > CORPUS_TRIM_AT) {
