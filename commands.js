@@ -1403,6 +1403,61 @@ function handle(channel, tags, message, ctx) {
     return null;
   }
 
+  // ?check <username> — detailed last stream info
+  if (cmd === "check") {
+    const raw    = (args[0] || "").replace(/^@/, "").toLowerCase().trim();
+    const target = raw || (tags.username || "").toLowerCase();
+    const user   = (tags.username || "").toLowerCase();
+    const { client } = ctx;
+    const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
+    Promise.resolve().then(async () => {
+      try {
+        // ivr.fi gives us user info + lastBroadcast title
+        const ivrRes  = await fetch(`https://api.ivr.fi/v2/twitch/user?login=${encodeURIComponent(target)}`, {
+          headers: { "User-Agent": "shibez-bot/1.0" },
+        });
+        const ivrData = await ivrRes.json();
+        const u = Array.isArray(ivrData) ? ivrData[0] : (ivrData?.data?.[0] ?? ivrData);
+        if (!u?.login) {
+          return client.say(replyTo, `@${user} ⚠️ User "${target}" not found on Twitch.`).catch(() => {});
+        }
+
+        const lastGame = u.lastBroadcast?.game?.displayName || u.lastBroadcast?.title || null;
+        const lastDate = u.lastBroadcast?.startedAt
+          ? new Date(u.lastBroadcast.startedAt).toLocaleDateString("en-GB") : null;
+
+        let durationStr = "";
+        // Try Twitch Helix /videos for duration (requires TWITCH_CLIENT_ID)
+        if (ctx.helixGet) {
+          try {
+            const vidData = await ctx.helixGet(`videos?user_login=${encodeURIComponent(u.login)}&first=1&type=archive`);
+            const vid = vidData?.data?.[0];
+            if (vid?.duration) {
+              // duration is like "3h2m45s"
+              durationStr = ` | Duration: ${vid.duration}`;
+            }
+          } catch (_) {}
+        }
+
+        const parts = [];
+        if (lastDate) parts.push(`Last live: ${lastDate}`);
+        if (lastGame) parts.push(`Game: ${lastGame}`);
+        if (durationStr) parts.push(durationStr.replace(" | ", ""));
+
+        if (!parts.length) {
+          return client.say(replyTo, `@${user} 👤 ${u.displayName} — no broadcast history found.`).catch(() => {});
+        }
+
+        client.say(replyTo,
+          `@${user} 👤 ${u.displayName} | ${parts.join(" | ")}`
+        ).catch(() => {});
+      } catch (e) {
+        client.say(replyTo, `@${user} ⚠️ Check failed: ${e.message}`).catch(() => {});
+      }
+    });
+    return null;
+  }
+
   // ?isbanned <username>
   if (cmd === "isbanned") {
     const target = (args[0] || "").replace(/^@/, "").toLowerCase().trim();
@@ -1568,27 +1623,31 @@ function handle(channel, tags, message, ctx) {
     const user = (tags.username || "").toLowerCase();
     Promise.resolve().then(async () => {
       try {
-        const rssUrl = encodeURIComponent(
-          `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`
-        );
-        const res  = await fetch(
-          `https://api.rss2json.com/v1/api.json?rss_url=${rssUrl}&count=3`,
-          { headers: { "User-Agent": "shibez-bot/1.0" }, signal: AbortSignal.timeout(10_000) }
-        );
+        // Fetch Google News RSS directly — no third-party API needed
+        const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+        const res = await fetch(rssUrl, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; shibez-bot/1.0)" },
+          signal: AbortSignal.timeout(10_000),
+        });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (data.status !== "ok" || !data.items?.length) {
+        const xml = await res.text();
+
+        // Parse <item> blocks from RSS XML
+        const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 3);
+        if (!items.length) {
           return client.say(replyTo, `@${user} 🔍 No news found for "${query}".`).catch(() => {});
         }
-        // Show up to 3 headlines, each with source and clean title
-        const headlines = data.items.slice(0, 3).map((item, i) => {
-          const title  = (item.title || "")
-            .replace(/\s*-\s*[^-]+$/, "") // strip "- Source Name" suffix Google adds
-            .replace(/&amp;/g, "&").replace(/&quot;/g, '"').trim();
-          const source = item.author || data.feed?.title || "";
+
+        const headlines = items.map((m, i) => {
+          const titleMatch  = m[1].match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) ||
+                              m[1].match(/<title>(.*?)<\/title>/);
+          const sourceMatch = m[1].match(/<source[^>]*>(.*?)<\/source>/);
+          let title  = (titleMatch?.[1] || "").replace(/\s*-\s*[^-]+$/, "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').trim();
+          const source = sourceMatch?.[1]?.trim() || "";
           return `${i + 1}. ${title}${source ? ` (${source})` : ""}`;
         }).join(" | ");
-        client.say(replyTo, `@${user} 📰 News — ${query}: ${headlines}`.slice(0, 499)).catch(() => {});
+
+        client.say(replyTo, `@${user} 📰 ${query}: ${headlines}`.slice(0, 499)).catch(() => {});
       } catch (e) {
         client.say(replyTo, `@${user} ⚠️ News fetch failed: ${e.message}`).catch(() => {});
       }
