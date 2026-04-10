@@ -1,4 +1,4 @@
-# 🤖 Twitch Bot (Shibez_bot)
+# 🤖 Shibez_bot
 
 A Twitch bot that blends in as a viewer by posting Markov-generated chat messages,
 with a full live command system and fun other features!
@@ -11,7 +11,8 @@ All commands use the `?` prefix.
 
 ---
 
-### 👁️ Anyone (no access required)
+### 👁️ Anyone no access required 
+(bot has to join channel first with "?join" command)
 
 | Command | What it does |
 |---|---|
