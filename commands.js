@@ -258,10 +258,14 @@ function handle(channel, tags, message, ctx) {
     if (cmd === "leave") {
       const target = normalise(args[0]);
       if (!target) return `⚠️ Usage: ${PREFIX}leave <channel>`;
-      const idx = state.postChannels.indexOf(target);
-      if (idx === -1) return `Not currently posting in #${target}.`;
+      const HOME = (process.env.CHANNEL || "").toLowerCase();
+      if (target === HOME) return `⚠️ Cannot leave the home channel (${HOME}). Use ${PREFIX}stop to pause posting.`;
+      const inPost   = state.postChannels.indexOf(target);
+      const inManual = (state.manualChannels || []).indexOf(target);
+      if (inPost === -1 && inManual === -1) return `Not currently in #${target} as a post or manual channel.`;
+      if (inPost   !== -1) state.postChannels.splice(inPost, 1);
+      if (inManual !== -1) state.manualChannels.splice(inManual, 1);
       leaveChannel(target);
-      state.postChannels.splice(idx, 1);
       saveState();
       return `👋 Left #${target}.`;
     }
@@ -2013,6 +2017,9 @@ function handle(channel, tags, message, ctx) {
   }
 
   if (cmd === "leave") {
+    const HOME = (process.env.CHANNEL || "").toLowerCase();
+    if (ch === HOME) return `⚠️ Cannot leave the home channel. Use ${PREFIX}stop to pause posting, or ${PREFIX}removeme to remove the bot entirely.`;
+    if (args[0]) return `⚠️ To leave a specific channel use ${PREFIX}leave <channel> as the owner. This command leaves the CURRENT channel (#${ch}).`;
     const idx = state.postChannels.indexOf(ch);
     if (idx === -1) return `Not currently posting in #${ch}.`;
     leaveChannel(ch);

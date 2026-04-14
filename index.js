@@ -34,12 +34,15 @@ const state = stateManager.load();
 
 if (!state.postChannels.includes(HOME_CHANNEL.toLowerCase())) {
   const homeCh = HOME_CHANNEL.toLowerCase();
+  console.warn(`⚠️  Home channel #${homeCh} was missing from postChannels — re-adding.`);
   state.postChannels.unshift(homeCh);
-  // Apply default settings for a fresh channel
-  if (!state.channelSettings[homeCh]) state.channelSettings[homeCh] = {};
-  state.channelSettings[homeCh].paused    = true;
-  state.channelSettings[homeCh].onlineOnly = true;
-  state.channelSettings[homeCh].intervalMs = 3_600_000;
+  // Only apply fresh defaults if there are no existing settings for this channel
+  if (!state.channelSettings[homeCh]) {
+    state.channelSettings[homeCh] = {};
+    state.channelSettings[homeCh].paused    = true;
+    state.channelSettings[homeCh].onlineOnly = true;
+    state.channelSettings[homeCh].intervalMs = 3_600_000;
+  }
   stateManager.save(state);
 }
 
