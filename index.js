@@ -734,6 +734,28 @@ const ctx = {
   isForsenPlayingMinecraft: () => (prevCategories["forsen"] || "").toLowerCase().includes("minecraft"),
   getForsenLastRunSecs: () => forsenMcLastRunSecs,
   getForsenCategory: () => prevCategories["forsen"] || null,
+  fireForsenAlert: (customMsg) => {
+    const timeStr = forsenMcLastGameSecs > 0 ? formatRunTime(forsenMcLastGameSecs) : null;
+    const targets = [...new Set([...state.postChannels, ...(state.manualChannels || [])])];
+    for (const ch of targets) {
+      const channelSubs = (state.forsenAlertChannels && state.forsenAlertChannels[ch]) || [];
+      const baseMsg = customMsg || (timeStr
+        ? `forsenE 🎯 Forsen is on a run! Current time: ${timeStr} — twitch.tv/forsen`
+        : `forsenE 🎯 Forsen is on a god run! Check it out: twitch.tv/forsen`);
+      if (partnerChannels.has(ch)) {
+        const chatMentions = channelSubs.includes(ch) ? `@${ch} ` : "";
+        client.say(`#${ch}`, `${chatMentions}${baseMsg}`).catch(() => {});
+        const whisperUsers = channelSubs.filter(u => u !== ch);
+        whisperUsers.forEach((u, i) => {
+          setTimeout(() => { client.whisper(u, baseMsg).catch(() => {}); }, i * 600);
+        });
+      } else {
+        const mentions = channelSubs.length > 0 ? channelSubs.map(u => `@${u}`).join(" ") + " " : "";
+        client.say(`#${ch}`, `${mentions}${baseMsg}`).catch(() => {});
+      }
+    }
+    console.log(`🎮 [forsenmc] Manual alert fired.`);
+  },
   addLearnChannel: (ch) => {
     if (!state.learnChannels.includes(ch)) state.learnChannels.push(ch);
   },

@@ -895,6 +895,16 @@ function handle(channel, tags, message, ctx) {
     return `@${user} ${Math.random() < 0.5 ? "🪙 Heads!" : "🪙 Tails!"}`;
   }
 
+  if (cmd === "manualalert") {
+    if (!isOwner(tags)) return null;
+    const customMsg = args.join(" ").trim() || null;
+    if (ctx.fireForsenAlert) {
+      ctx.fireForsenAlert(customMsg || undefined);
+      return "forsenE Manual alert fired to all channels!";
+    }
+    return "forsenAlert not available.";
+  }
+
   if (cmd === "forsenalert") {
     const user = (tags.username || "").toLowerCase();
     const sub  = (args[0] || "").toLowerCase();
