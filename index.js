@@ -266,8 +266,8 @@ setInterval(updateLiveChannels, 2 * 60 * 1000);
 // Response example: { "gameTime": "00:11:32.400", "realTime": "00:12:01.200", ... }
 // NOTE: If the endpoint URL is slightly different, update FORSENMC_API_URL below.
 
-// Partner channels get whisper-mode alerts automatically:
-// subscribers are whispered, only the broadcaster gets a chat @mention.
+// All channels: @mention subscribers in chat (Twitch disabled IRC whispers in 2023):
+
 // Populated by fetchPartnerChannels() on connect and every 10 minutes.
 const partnerChannels = new Set();
 
@@ -416,34 +416,18 @@ async function checkForsenMc() {
       const hint = "| type ?forsenalert to get notified!";
 
       // Broadcast to all post channels + manual channels.
-      // Partner channels: whisper all subscribers, only @mention the broadcaster in chat.
+      // @mention all subscribers in chat (whispers no longer work via tmi.js)
       // Non-partner channels: @mention all subscribers in chat.
       const targets = [...new Set([...state.postChannels, ...(state.manualChannels || [])])];
       for (const ch of targets) {
         const channelSubs = (state.forsenAlertChannels && state.forsenAlertChannels[ch]) || [];
 
-        if (partnerChannels.has(ch)) {
-          const linkPart     = ch === "xqc" ? "" : " — twitch.tv/forsen";
-          // In partner channels only @mention the broadcaster if they're subscribed
-          const chatUsers    = channelSubs.includes(ch) ? [ch] : [];
-          const chatMentions = chatUsers.length > 0 ? `@${ch} ` : "";
-          const chatMsg      = `${chatMentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr}${linkPart} ${hint}`;
-          client.say(`#${ch}`, chatMsg).catch(() => {});
-
-          // Whisper everyone else who is subscribed
-          const whisperUsers = channelSubs.filter(u => u !== ch);
-          whisperUsers.forEach((u, i) => {
-            setTimeout(() => {
-              client.whisper(u, `forsenE 🎯 Forsen is on a god run! Current time: ${timeStr} — twitch.tv/forsen`).catch(() => {});
-            }, i * 600);
-          });
-          console.log(`🎮 [forsenmc] #${ch} (partner): chat mention (${chatUsers.join(", ") || "none"}) + whispered ${whisperUsers.length} users.`);
-        } else {
-          const mentions = channelSubs.length > 0 ? channelSubs.map(u => `@${u}`).join(" ") + " " : "";
-          const msg      = `${mentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr} — twitch.tv/forsen ${hint}`;
-          console.log(`🎮 [forsenmc] Firing alert in #${ch}: ${msg}`);
-          client.say(`#${ch}`, msg).catch(() => {});
-        }
+        // Twitch removed whisper support from IRC/tmi.js — use chat @mentions for everyone
+        const linkPart = ch === "xqc" ? "" : " — twitch.tv/forsen";
+        const mentions = channelSubs.length > 0 ? channelSubs.map(u => `@${u}`).join(" ") + " " : "";
+        const msg      = `${mentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr}${linkPart} ${hint}`;
+        console.log(`🎮 [forsenmc] Firing alert in #${ch}: ${msg}`);
+        client.say(`#${ch}`, msg).catch(() => {});
       }
     }
   } catch (e) {
@@ -734,28 +718,6 @@ const ctx = {
   isForsenPlayingMinecraft: () => (prevCategories["forsen"] || "").toLowerCase().includes("minecraft"),
   getForsenLastRunSecs: () => forsenMcLastRunSecs,
   getForsenCategory: () => prevCategories["forsen"] || null,
-  fireForsenAlert: (customMsg) => {
-    const timeStr = forsenMcLastGameSecs > 0 ? formatRunTime(forsenMcLastGameSecs) : null;
-    const targets = [...new Set([...state.postChannels, ...(state.manualChannels || [])])];
-    for (const ch of targets) {
-      const channelSubs = (state.forsenAlertChannels && state.forsenAlertChannels[ch]) || [];
-      const baseMsg = customMsg || (timeStr
-        ? `forsenE 🎯 Forsen is on a run! Current time: ${timeStr} — twitch.tv/forsen`
-        : `forsenE 🎯 Forsen is on a god run! Check it out: twitch.tv/forsen`);
-      if (partnerChannels.has(ch)) {
-        const chatMentions = channelSubs.includes(ch) ? `@${ch} ` : "";
-        client.say(`#${ch}`, `${chatMentions}${baseMsg}`).catch(() => {});
-        const whisperUsers = channelSubs.filter(u => u !== ch);
-        whisperUsers.forEach((u, i) => {
-          setTimeout(() => { client.whisper(u, baseMsg).catch(() => {}); }, i * 600);
-        });
-      } else {
-        const mentions = channelSubs.length > 0 ? channelSubs.map(u => `@${u}`).join(" ") + " " : "";
-        client.say(`#${ch}`, `${mentions}${baseMsg}`).catch(() => {});
-      }
-    }
-    console.log(`🎮 [forsenmc] Manual alert fired.`);
-  },
   addLearnChannel: (ch) => {
     if (!state.learnChannels.includes(ch)) state.learnChannels.push(ch);
   },
