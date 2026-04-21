@@ -163,12 +163,13 @@ async function updateLiveChannels() {
       const users = chUsers[event] || [];
       if (users.length === 0) return;
       const prefix = `${message} `;
+      const CHUNK_SIZE = 8;
       const chunks = [];
       let current = [];
       let len = prefix.length;
       for (const u of users) {
         const part = `@${u} `;
-        if (len + part.length > 490 && current.length > 0) {
+        if ((current.length >= CHUNK_SIZE || len + part.length > 490) && current.length > 0) {
           chunks.push(current);
           current = [];
           len = prefix.length;
@@ -422,12 +423,27 @@ async function checkForsenMc() {
       for (const ch of targets) {
         const channelSubs = (state.forsenAlertChannels && state.forsenAlertChannels[ch]) || [];
 
-        // Twitch removed whisper support from IRC/tmi.js — use chat @mentions for everyone
         const linkPart = ch === "xqc" ? "" : " — twitch.tv/forsen";
-        const mentions = channelSubs.length > 0 ? channelSubs.map(u => `@${u}`).join(" ") + " " : "";
-        const msg      = `${mentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr}${linkPart} ${hint}`;
-        console.log(`🎮 [forsenmc] Firing alert in #${ch}: ${msg}`);
-        client.say(`#${ch}`, msg).catch(() => {});
+        const alertMsg = `forsenE 🎯 Forsen is on a god run! Current time: ${timeStr}${linkPart} ${hint}`;
+
+        if (channelSubs.length === 0) {
+          client.say(`#${ch}`, alertMsg).catch(() => {});
+        } else {
+          // Chunk subs into groups of 8 so the bot doesn't get timed out
+          const CHUNK_SIZE = 8;
+          for (let i = 0; i < channelSubs.length; i += CHUNK_SIZE) {
+            const chunk   = channelSubs.slice(i, i + CHUNK_SIZE);
+            const mentions = chunk.map(u => `@${u}`).join(" ");
+            const msg      = i === 0
+              ? `${mentions} ${alertMsg}`           // first chunk includes the alert text
+              : mentions;                            // subsequent chunks are just the @mentions
+            const delay = Math.floor(i / CHUNK_SIZE) * 1500;
+            setTimeout(() => {
+              client.say(`#${ch}`, msg).catch(() => {});
+            }, delay);
+          }
+        }
+        console.log(`🎮 [forsenmc] Firing alert in #${ch} (${channelSubs.length} subs, ${Math.ceil(channelSubs.length / 8) || 1} msg(s))`);
       }
     }
   } catch (e) {
