@@ -163,7 +163,7 @@ async function updateLiveChannels() {
       const users = chUsers[event] || [];
       if (users.length === 0) return;
       const prefix = `${message} `;
-      const CHUNK_SIZE = 8;
+      const CHUNK_SIZE = 5;
       const chunks = [];
       let current = [];
       let len = prefix.length;
@@ -182,7 +182,7 @@ async function updateLiveChannels() {
       chunks.forEach((chunk, i) => {
         setTimeout(() => {
           client.say(target, prefix + chunk.map(u => `@${u}`).join(" ")).catch(() => {});
-        }, i * 500);
+        }, i * 3000);
       });
     }
 
@@ -422,28 +422,22 @@ async function checkForsenMc() {
       const targets = [...new Set([...state.postChannels, ...(state.manualChannels || [])])];
       for (const ch of targets) {
         const channelSubs = (state.forsenAlertChannels && state.forsenAlertChannels[ch]) || [];
-
         const linkPart = ch === "xqc" ? "" : " — twitch.tv/forsen";
         const alertMsg = `forsenE 🎯 Forsen is on a god run! Current time: ${timeStr}${linkPart} ${hint}`;
 
         if (channelSubs.length === 0) {
           client.say(`#${ch}`, alertMsg).catch(() => {});
         } else {
-          // Chunk subs into groups of 8 so the bot doesn't get timed out
-          const CHUNK_SIZE = 8;
+          const CHUNK_SIZE = 5;
           for (let i = 0; i < channelSubs.length; i += CHUNK_SIZE) {
             const chunk   = channelSubs.slice(i, i + CHUNK_SIZE);
-            const mentions = chunk.map(u => `@${u}`).join(" ");
-            const msg      = i === 0
-              ? `${mentions} ${alertMsg}`           // first chunk includes the alert text
-              : mentions;                            // subsequent chunks are just the @mentions
-            const delay = Math.floor(i / CHUNK_SIZE) * 1500;
+            const msg     = `${chunk.map(u => `@${u}`).join(" ")} ${alertMsg}`;
             setTimeout(() => {
-              client.say(`#${ch}`, msg).catch(() => {});
-            }, delay);
+              client.say(`#${ch}`, msg.slice(0, 499)).catch(() => {});
+            }, Math.floor(i / CHUNK_SIZE) * 3000);
           }
         }
-        console.log(`🎮 [forsenmc] Firing alert in #${ch} (${channelSubs.length} subs, ${Math.ceil(channelSubs.length / 8) || 1} msg(s))`);
+        console.log(`🎮 [forsenmc] Firing alert in #${ch} (${channelSubs.length} subs, ${Math.ceil(channelSubs.length / 5) || 1} msg(s))`);
       }
     }
   } catch (e) {
