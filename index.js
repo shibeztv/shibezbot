@@ -163,7 +163,7 @@ async function updateLiveChannels() {
       const users = chUsers[event] || [];
       if (users.length === 0) return;
       const prefix = `${message} `;
-      const CHUNK_SIZE = 5;
+      const CHUNK_SIZE = 7;
       const chunks = [];
       let current = [];
       let len = prefix.length;
@@ -182,7 +182,7 @@ async function updateLiveChannels() {
       chunks.forEach((chunk, i) => {
         setTimeout(() => {
           client.say(target, prefix + chunk.map(u => `@${u}`).join(" ")).catch(() => {});
-        }, i * 3000);
+        }, i * 1800);
       });
     }
 
@@ -428,16 +428,16 @@ async function checkForsenMc() {
         if (channelSubs.length === 0) {
           client.say(`#${ch}`, alertMsg).catch(() => {});
         } else {
-          const CHUNK_SIZE = 5;
+          const CHUNK_SIZE = 7;
           for (let i = 0; i < channelSubs.length; i += CHUNK_SIZE) {
-            const chunk   = channelSubs.slice(i, i + CHUNK_SIZE);
-            const msg     = `${chunk.map(u => `@${u}`).join(" ")} ${alertMsg}`;
+            const chunk = channelSubs.slice(i, i + CHUNK_SIZE);
+            const msg   = `${chunk.map(u => `@${u}`).join(" ")} ${alertMsg}`;
             setTimeout(() => {
               client.say(`#${ch}`, msg.slice(0, 499)).catch(() => {});
-            }, Math.floor(i / CHUNK_SIZE) * 3000);
+            }, Math.floor(i / CHUNK_SIZE) * 1800);
           }
         }
-        console.log(`🎮 [forsenmc] Firing alert in #${ch} (${channelSubs.length} subs, ${Math.ceil(channelSubs.length / 5) || 1} msg(s))`);
+        console.log(`🎮 [forsenmc] Firing alert in #${ch} (${channelSubs.length} subs, ${Math.ceil(channelSubs.length / 7) || 1} msg(s))`);
       }
     }
   } catch (e) {
