@@ -435,12 +435,10 @@ function handle(channel, tags, message, ctx) {
       ctx.sayCooldowns[user] = Date.now();
     }
     const result = postNow(channel, true);
-    if (typeof result === "string") {
-      if (result === "corpus_small") return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — need more chat messages.`;
-      if (result === "cooldown") return `⚠️ Cooldown active — need more chat messages between bot posts.`;
-      if (result === "filtered") return `⚠️ Couldn't generate a clean message right now.`;
-      return `⚠️ Could not post.`;
-    }
+    if (result === "corpus_small") return `⚠️ Corpus too small (${markov.size}/${state.minCorpus}) — need more chat messages.`;
+    if (result === "cooldown")     return `⚠️ Cooldown active — need more chat messages between bot posts.`;
+    if (result === "filtered")     return `⚠️ Couldn't generate a clean message right now.`;
+    // Any other string = postNow sent the message successfully
     return null;
   }
 
@@ -2030,12 +2028,10 @@ function handle(channel, tags, message, ctx) {
     const HOME = (process.env.CHANNEL || "").toLowerCase();
     if (ch === HOME) return `⚠️ Cannot leave the home channel. Use ${PREFIX}stop to pause posting, or ${PREFIX}removeme to remove the bot entirely.`;
     if (args[0]) return `⚠️ To leave a specific channel use ${PREFIX}leave <channel> as the owner. This command leaves the CURRENT channel (#${ch}).`;
-    const idxPost   = state.postChannels.indexOf(ch);
-    const idxManual = (state.manualChannels || []).indexOf(ch);
-    if (idxPost === -1 && idxManual === -1) return `Not currently posting in #${ch}.`;
-    if (idxPost   !== -1) state.postChannels.splice(idxPost, 1);
-    if (idxManual !== -1) state.manualChannels.splice(idxManual, 1);
+    const idx = state.postChannels.indexOf(ch);
+    if (idx === -1) return `Not currently posting in #${ch}.`;
     leaveChannel(ch);
+    state.postChannels.splice(idx, 1);
     saveState();
     return `👋 Left #${ch}.`;
   }

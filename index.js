@@ -827,9 +827,9 @@ client.on("message", (channel, tags, message, self) => {
   if (!inPostCh && !inManualCh && !inLearnCh) return;
 
   // In a manual or learn-only channel — only owner OR the channel's own broadcaster
-  // can run commands. EXCEPT ?forsenalert which is always open so anyone can subscribe.
-  const isForsenAlertCmd  = message.trim().toLowerCase() === "?forsenalert";
-  const isBroadcasterMsg  = commands.isBroadcaster(tags);
+  // can run commands. EXCEPT ?forsenalert which is always open from any channel.
+  const isForsenAlertCmd = message.trim().toLowerCase() === "?forsenalert";
+  const isBroadcasterMsg = commands.isBroadcaster(tags);
   if ((inManualCh || inLearnCh) && !inPostCh && !isOwnerMsg && !isBroadcasterMsg && !isForsenAlertCmd) return;
 
   const reply = commands.handle(channel, tags, message, ctx);
