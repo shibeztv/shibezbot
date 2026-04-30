@@ -163,13 +163,12 @@ async function updateLiveChannels() {
       const users = chUsers[event] || [];
       if (users.length === 0) return;
       const prefix = `${message} `;
-      const CHUNK_SIZE = 7;
       const chunks = [];
       let current = [];
       let len = prefix.length;
       for (const u of users) {
         const part = `@${u} `;
-        if ((current.length >= CHUNK_SIZE || len + part.length > 490) && current.length > 0) {
+        if (len + part.length > 490 && current.length > 0) {
           chunks.push(current);
           current = [];
           len = prefix.length;
@@ -182,7 +181,7 @@ async function updateLiveChannels() {
       chunks.forEach((chunk, i) => {
         setTimeout(() => {
           client.say(target, prefix + chunk.map(u => `@${u}`).join(" ")).catch(() => {});
-        }, i * 1800);
+        }, i * 500);
       });
     }
 
@@ -422,22 +421,13 @@ async function checkForsenMc() {
       const targets = [...new Set([...state.postChannels, ...(state.manualChannels || [])])];
       for (const ch of targets) {
         const channelSubs = (state.forsenAlertChannels && state.forsenAlertChannels[ch]) || [];
-        const linkPart = ch === "xqc" ? "" : " — twitch.tv/forsen";
-        const alertMsg = `forsenE 🎯 Forsen is on a god run! Current time: ${timeStr}${linkPart} ${hint}`;
 
-        if (channelSubs.length === 0) {
-          client.say(`#${ch}`, alertMsg).catch(() => {});
-        } else {
-          const CHUNK_SIZE = 7;
-          for (let i = 0; i < channelSubs.length; i += CHUNK_SIZE) {
-            const chunk = channelSubs.slice(i, i + CHUNK_SIZE);
-            const msg   = `${chunk.map(u => `@${u}`).join(" ")} ${alertMsg}`;
-            setTimeout(() => {
-              client.say(`#${ch}`, msg.slice(0, 499)).catch(() => {});
-            }, Math.floor(i / CHUNK_SIZE) * 1800);
-          }
-        }
-        console.log(`🎮 [forsenmc] Firing alert in #${ch} (${channelSubs.length} subs, ${Math.ceil(channelSubs.length / 7) || 1} msg(s))`);
+        // Twitch removed whisper support from IRC/tmi.js — use chat @mentions for everyone
+        const linkPart = ch === "xqc" ? "" : " — twitch.tv/forsen";
+        const mentions = channelSubs.length > 0 ? channelSubs.map(u => `@${u}`).join(" ") + " " : "";
+        const msg      = `${mentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr}${linkPart} ${hint}`;
+        console.log(`🎮 [forsenmc] Firing alert in #${ch}: ${msg}`);
+        client.say(`#${ch}`, msg).catch(() => {});
       }
     }
   } catch (e) {
@@ -836,10 +826,11 @@ client.on("message", (channel, tags, message, self) => {
   // Not in any known channel — ignore completely
   if (!inPostCh && !inManualCh && !inLearnCh) return;
 
-  // In a manual or learn-only channel — only owner can run commands,
-  // EXCEPT ?forsenalert which is always open so anyone can subscribe from any channel.
-  const isForsenAlertCmd = message.trim().toLowerCase() === "?forsenalert";
-  if ((inManualCh || inLearnCh) && !inPostCh && !isOwnerMsg && !isForsenAlertCmd) return;
+  // In a manual or learn-only channel — only owner OR the channel's own broadcaster
+  // can run commands. EXCEPT ?forsenalert which is always open so anyone can subscribe.
+  const isForsenAlertCmd  = message.trim().toLowerCase() === "?forsenalert";
+  const isBroadcasterMsg  = commands.isBroadcaster(tags);
+  if ((inManualCh || inLearnCh) && !inPostCh && !isOwnerMsg && !isBroadcasterMsg && !isForsenAlertCmd) return;
 
   const reply = commands.handle(channel, tags, message, ctx);
   if (reply) {
