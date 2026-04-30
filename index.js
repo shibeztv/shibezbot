@@ -815,9 +815,9 @@ client.on("message", (channel, tags, message, self) => {
   }
 
   // Command routing:
-  //   postChannels  → everyone can use commands
-  //   manualChannels → owner only (no public commands)
-  //   learnChannels  → owner only
+  //   postChannels  → everyone can use commands + auto-posting
+  //   manualChannels → everyone can use commands, no auto-posting
+  //   learnChannels  → completely silent, owner-only commands
   const isOwnerMsg = commands.isOwner(tags);
   const inPostCh   = state.postChannels.includes(ch);
   const inManualCh = manualChannels.includes(ch);
@@ -826,11 +826,9 @@ client.on("message", (channel, tags, message, self) => {
   // Not in any known channel — ignore completely
   if (!inPostCh && !inManualCh && !inLearnCh) return;
 
-  // In a manual or learn-only channel — only owner OR the channel's own broadcaster
-  // can run commands. EXCEPT ?forsenalert which is always open from any channel.
-  const isForsenAlertCmd = message.trim().toLowerCase() === "?forsenalert";
-  const isBroadcasterMsg = commands.isBroadcaster(tags);
-  if ((inManualCh || inLearnCh) && !inPostCh && !isOwnerMsg && !isBroadcasterMsg && !isForsenAlertCmd) return;
+  // In a learn-only channel — only owner can run commands (except ?forsenalert)
+  const isForsenAlertCmd = message.trim().toLowerCase().startsWith("?forsenalert");
+  if (inLearnCh && !inPostCh && !inManualCh && !isOwnerMsg && !isForsenAlertCmd) return;
 
   const reply = commands.handle(channel, tags, message, ctx);
   if (reply) {
