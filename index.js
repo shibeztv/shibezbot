@@ -386,7 +386,7 @@ async function checkXqcMc() {
       const timeStr = formatRunTime(gameSecs);
       const hint    = "| type ?forsenalert to get notified!";
 
-      const targets = [...new Set([...state.postChannels, ...(state.manualChannels || [])])];
+      const targets = [...new Set([...state.postChannels, ...(state.manualChannels || [])])].filter(ch => ch !== "xqc");
       for (const ch of targets) {
         const channelSubs = (state.forsenAlertChannels && state.forsenAlertChannels[ch]) || [];
         const mentions    = channelSubs.length > 0 ? channelSubs.map(u => `@${u}`).join(" ") + " " : "";
