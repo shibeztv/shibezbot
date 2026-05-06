@@ -257,26 +257,20 @@ function isChannelLive(ch) {
 
 setInterval(updateLiveChannels, 2 * 60 * 1000);
 
-// ── Forsen MC speedrun alert ──────────────────────────────────────────────────
-// Polls the forsenmc tracker every 45s while forsen is live.
+// ── xQc MC speedrun alert ─────────────────────────────────────────────────────
+// Polls the xqcmc tracker every 45s while xQc is live.
 // Fires a chat alert in all post + manual channels when his run hits 11 minutes.
 // Resets automatically when his timer drops back below the threshold (new run).
 //
-// API endpoint: GET https://forsenmc.piggeywig2000.dev/api/times/latest?streamer=forsen
-// Response example: { "gameTime": "00:11:32.400", "realTime": "00:12:01.200", ... }
-// NOTE: If the endpoint URL is slightly different, update FORSENMC_API_URL below.
+// API endpoint: GET https://xqcmc.piggeywig2000.dev/api/time/latest?streamer=xqc
 
-// All channels: @mention subscribers in chat (Twitch disabled IRC whispers in 2023):
-
-// Populated by fetchPartnerChannels() on connect and every 10 minutes.
-const partnerChannels = new Set();
+const partnerChannels = new Set(); // kept for partner detection (fetchPartnerChannels)
 
 async function fetchPartnerChannels() {
   if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) return;
   const joined = allChannels();
   if (!joined.length) return;
   try {
-    // Helix allows up to 100 logins per request
     const chunks = [];
     for (let i = 0; i < joined.length; i += 100) chunks.push(joined.slice(i, i + 100));
     partnerChannels.clear();
@@ -284,9 +278,7 @@ async function fetchPartnerChannels() {
       const params = chunk.map(ch => `login=${encodeURIComponent(ch)}`).join("&");
       const data   = await helixGet(`users?${params}`);
       for (const u of (data.data || [])) {
-        if (u.broadcaster_type === "partner") {
-          partnerChannels.add(u.login.toLowerCase());
-        }
+        if (u.broadcaster_type === "partner") partnerChannels.add(u.login.toLowerCase());
       }
     }
     console.log(`🌟  Partner channels: ${[...partnerChannels].join(", ") || "(none)"}`);
@@ -297,23 +289,26 @@ async function fetchPartnerChannels() {
 
 setInterval(fetchPartnerChannels, 10 * 60 * 1000);
 
-const FORSENMC_THRESHOLD  = 11 * 60;  // 11 minutes in seconds — alert when run reaches this
-const FORSENMC_POLL_MS    = 45_000;   // poll every 45s (site updates every 4s, no need to hammer)
+const XQCMC_THRESHOLD  = 11 * 60;   // 11 minutes in seconds
+const XQCMC_POLL_MS    = 45_000;    // poll every 45s
 
-let forsenMcAlertFired    = false;    // true once we've alerted for this run
-let forsenMcLastGameSecs  = 0;        // last known game_time in seconds
-let forsenMcLastRunSecs   = 0;        // best/last completed run IGT in seconds
-let forsenMcLatestData    = null;     // latest API response object
+let xqcMcAlertFired   = false;
+let xqcMcLastGameSecs = 0;
+let xqcMcLastRunSecs  = 0;
+let xqcMcLatestData   = null;
+
+const XQCMC_URLS = [
+  "https://xqcmc.piggeywig2000.dev/api/time/latest?streamer=xqc",
+  "https://xqcmc.piggeywig2000.dev/api/times/latest?streamer=xqc",
+  "https://xqcmc.piggeywig2000.dev/api/Times/latest?streamer=xqc",
+  "https://xqcmc.piggeywig2000.dev/api/times?streamer=xqc",
+];
 
 function parseTimeToSecs(timeStr) {
-  // Parses "HH:MM:SS.mmm" or "MM:SS.mmm" → total seconds
   if (!timeStr) return 0;
   const parts = timeStr.split(":");
-  if (parts.length === 3) {
-    return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseFloat(parts[2]);
-  } else if (parts.length === 2) {
-    return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
-  }
+  if (parts.length === 3) return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseFloat(parts[2]);
+  if (parts.length === 2) return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
   return 0;
 }
 
@@ -323,21 +318,10 @@ function formatRunTime(secs) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-// All known URL variants to try in order
-const FORSENMC_URLS = [
-  "https://forsenmc.piggeywig2000.dev/api/time/latest?streamer=forsen",   // confirmed working (from network tab)
-  "https://forsenmc.piggeywig2000.dev/api/times/latest?streamer=forsen",
-  "https://forsenmc.piggeywig2000.dev/api/Times/latest?streamer=forsen",
-  "https://forsenmc.piggeywig2000.dev/api/times?streamer=forsen",
-];
-
-// Extract game_time from whatever shape the API response has
 function extractGameTime(entry) {
-  // Direct fields (camelCase, snake_case, PascalCase)
   const direct = entry.gameTime || entry.game_time || entry.GameTime ||
                  entry.time || entry.timer || entry.runTime || entry.run_time || "";
   if (direct) return direct;
-  // Nested under a data/result wrapper
   const nested = entry.data || entry.result || entry.payload;
   if (nested && typeof nested === "object") {
     return nested.gameTime || nested.game_time || nested.GameTime ||
@@ -356,86 +340,67 @@ function extractRealTime(entry) {
   return "";
 }
 
-async function checkForsenMc() {
-  // Only poll when forsen is live
-  if (!liveChannels.has("forsen")) return;
+async function checkXqcMc() {
+  // Only poll when xQc is live
+  if (!liveChannels.has("xqc")) return;
 
   try {
     let data = null;
-    let usedUrl = "";
 
-    // Try each URL variant until one works
-    for (const url of FORSENMC_URLS) {
+    for (const url of XQCMC_URLS) {
       try {
         const res = await fetch(url, { headers: { "User-Agent": "shibez-bot/1.0" } });
-        if (!res.ok) {
-          console.warn(`🎮 [forsenmc] HTTP ${res.status} from ${url}`);
-          continue;
-        }
+        if (!res.ok) { console.warn(`🎮 [xqcmc] HTTP ${res.status} from ${url}`); continue; }
         const text = await res.text();
-        console.log(`🎮 [forsenmc] Raw response from ${url}: ${text.slice(0, 300)}`);
+        console.log(`🎮 [xqcmc] Raw response from ${url}: ${text.slice(0, 300)}`);
         data = JSON.parse(text);
-        usedUrl = url;
         break;
       } catch (urlErr) {
-        console.warn(`🎮 [forsenmc] Failed ${url}: ${urlErr.message}`);
+        console.warn(`🎮 [xqcmc] Failed ${url}: ${urlErr.message}`);
       }
     }
 
-    if (!data) {
-      console.warn("🎮 [forsenmc] All URL variants failed.");
-      return;
-    }
+    if (!data) { console.warn("🎮 [xqcmc] All URL variants failed."); return; }
 
-    // Handle array or single object
     const entry = Array.isArray(data) ? data[data.length - 1] : data;
     if (!entry) return;
-    forsenMcLatestData = entry;
+    xqcMcLatestData = entry;
 
-    // igt is a plain number in seconds (e.g. 12.579)
     const gameSecs = entry.igt != null ? parseFloat(entry.igt) : parseTimeToSecs(extractGameTime(entry));
 
     if (!gameSecs || gameSecs === 0) {
-      console.log(`🎮 [forsenmc] Timer is zero — no active run.`);
+      console.log(`🎮 [xqcmc] Timer is zero — no active run.`);
       return;
     }
 
-    // Detect timer reset (new run started) — save last run and reset alert flag
-    if (gameSecs < forsenMcLastGameSecs - 30) {
-      if (forsenMcLastGameSecs > 0) forsenMcLastRunSecs = forsenMcLastGameSecs;
-      console.log(`🎮 [forsenmc] Timer reset (${formatRunTime(forsenMcLastGameSecs)} → ${formatRunTime(gameSecs)}) — alert ready for next run.`);
-      forsenMcAlertFired = false;
+    if (gameSecs < xqcMcLastGameSecs - 30) {
+      if (xqcMcLastGameSecs > 0) xqcMcLastRunSecs = xqcMcLastGameSecs;
+      console.log(`🎮 [xqcmc] Timer reset (${formatRunTime(xqcMcLastGameSecs)} → ${formatRunTime(gameSecs)}) — alert ready for next run.`);
+      xqcMcAlertFired = false;
     }
-    forsenMcLastGameSecs = gameSecs;
-    if (gameSecs > 0) forsenMcLastRunSecs = gameSecs; // always track last known time
+    xqcMcLastGameSecs = gameSecs;
+    if (gameSecs > 0) xqcMcLastRunSecs = gameSecs;
 
-    // Fire alert when run crosses 11min for the first time, but only if under 30min
-    if (!forsenMcAlertFired && gameSecs >= FORSENMC_THRESHOLD && gameSecs < 30 * 60) {
-      forsenMcAlertFired = true;
+    if (!xqcMcAlertFired && gameSecs >= XQCMC_THRESHOLD && gameSecs < 30 * 60) {
+      xqcMcAlertFired = true;
       const timeStr = formatRunTime(gameSecs);
-      const hint = "| type ?forsenalert to get notified!";
+      const hint    = "| type ?forsenalert to get notified!";
 
-      // Broadcast to all post channels + manual channels.
-      // @mention all subscribers in chat (whispers no longer work via tmi.js)
-      // Non-partner channels: @mention all subscribers in chat.
       const targets = [...new Set([...state.postChannels, ...(state.manualChannels || [])])];
       for (const ch of targets) {
         const channelSubs = (state.forsenAlertChannels && state.forsenAlertChannels[ch]) || [];
-
-        // Twitch removed whisper support from IRC/tmi.js — use chat @mentions for everyone
-        const linkPart = ch === "xqc" ? "" : " — twitch.tv/forsen";
-        const mentions = channelSubs.length > 0 ? channelSubs.map(u => `@${u}`).join(" ") + " " : "";
-        const msg      = `${mentions}forsenE 🎯 Forsen is on a god run! Current time: ${timeStr}${linkPart} ${hint}`;
-        console.log(`🎮 [forsenmc] Firing alert in #${ch}: ${msg}`);
+        const mentions    = channelSubs.length > 0 ? channelSubs.map(u => `@${u}`).join(" ") + " " : "";
+        const msg         = `${mentions}xqcSmile 🎯 xQc is on a god run! Current time: ${timeStr} — twitch.tv/xqc ${hint}`;
+        console.log(`🎮 [xqcmc] Firing alert in #${ch}: ${msg}`);
         client.say(`#${ch}`, msg).catch(() => {});
       }
     }
   } catch (e) {
-    console.warn(`🎮 [forsenmc] Poll error: ${e.message}`);
+    console.warn(`🎮 [xqcmc] Poll error: ${e.message}`);
   }
 }
 
-setInterval(checkForsenMc, FORSENMC_POLL_MS);
+setInterval(checkXqcMc, XQCMC_POLL_MS);
 
 
 // ── Per-channel message counters (for cooldown) ───────────────────────────────
@@ -713,10 +678,13 @@ const ctx = {
   lastseen,
   firstline,
   lastMessage,
-  forsenMcLatestData: () => forsenMcLatestData,
+  xqcMcLatestData: () => xqcMcLatestData,
+  isXqcLive: () => liveChannels.has("xqc"),
+  isXqcPlayingMinecraft: () => (prevCategories["xqc"] || "").toLowerCase().includes("minecraft"),
+  getXqcLastRunSecs: () => xqcMcLastRunSecs,
+  getXqcCategory: () => prevCategories["xqc"] || null,
+  // forsen ctx kept for ?forsenrun static message (offline/online check)
   isForsenLive: () => liveChannels.has("forsen"),
-  isForsenPlayingMinecraft: () => (prevCategories["forsen"] || "").toLowerCase().includes("minecraft"),
-  getForsenLastRunSecs: () => forsenMcLastRunSecs,
   getForsenCategory: () => prevCategories["forsen"] || null,
   addLearnChannel: (ch) => {
     if (!state.learnChannels.includes(ch)) state.learnChannels.push(ch);

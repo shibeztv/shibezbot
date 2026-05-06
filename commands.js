@@ -721,7 +721,7 @@ function handle(channel, tags, message, ctx) {
 
   if (cmd === "commands") {
     const user = (tags.username || "").toLowerCase();
-    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | roll | choose | coinflip | forsenalert | forsenrun | bancheck | botcheck | ping | quote | news | coolfact | offliners | logs | linecount | loseroftheday | lastline | firstline | lastseen | isdown | stock | crypto | user | isbanned | founders | namecheck | randomclip | trumptweet | forsentweet | randomemote (ra) | notify | lines | top | status | help`;
+    return `@${user} Commands (?): say | markov | dadjoke | gpt | song | 8ball | mock | story | compliment | remind | forsen | copypasta | monka | iq | clip | urban | translate | weather | watchtime | followage | roll | choose | coinflip | forsenalert | forsenrun | xqcrun | bancheck | botcheck | ping | quote | news | coolfact | offliners | logs | linecount | loseroftheday | lastline | firstline | lastseen | isdown | stock | crypto | user | isbanned | founders | namecheck | randomclip | trumptweet | forsentweet | randomemote (ra) | notify | lines | top | status | help`;
   }
 
   if (cmd === "howtoadd") {
@@ -962,13 +962,19 @@ function handle(channel, tags, message, ctx) {
   }
 
   if (cmd === "forsenrun") {
+    const user = (tags.username || "").toLowerCase();
+    // forsen beat the world record — this command now shows the celebration
+    return `@${user} forsenSmug 🏆 FORSEN DID IT! New world record: 14:18 IGT TeaTime He will be remembered forever bajs FeelsStrongMan`;
+  }
+
+  if (cmd === "xqcrun") {
     const { client } = ctx;
     const replyTo = channel.startsWith("#") ? channel : `#${channel}`;
     const user = (tags.username || "").toLowerCase();
 
-    const isLive        = ctx.isForsenLive && ctx.isForsenLive();
-    const isMinecraft   = ctx.isForsenPlayingMinecraft && ctx.isForsenPlayingMinecraft();
-    const lastRunSecs   = ctx.getForsenLastRunSecs ? ctx.getForsenLastRunSecs() : 0;
+    const isLive      = ctx.isXqcLive && ctx.isXqcLive();
+    const isMC        = ctx.isXqcPlayingMinecraft && ctx.isXqcPlayingMinecraft();
+    const lastRunSecs = ctx.getXqcLastRunSecs ? ctx.getXqcLastRunSecs() : 0;
 
     function fmtSecs(s) {
       const totalSecs = Math.floor(s);
@@ -980,41 +986,30 @@ function handle(channel, tags, message, ctx) {
       return `${sec}s`;
     }
 
-    const lastRunPart = lastRunSecs > 0
-      ? ` | Last run: ${fmtSecs(lastRunSecs)}`
-      : "";
+    const lastRunPart = lastRunSecs > 0 ? ` | Last run: ${fmtSecs(lastRunSecs)}` : "";
 
-    // ── Case 1: forsen is offline ──────────────────────────────────────────
+    // ── Case 1: xQc is offline ────────────────────────────────────────────
     if (!isLive) {
-      // Check if it's between 16:30 and 22:00 CEST (UTC+2 in summer, UTC+1 in winter)
-      // Use UTC+2 as forsen's typical streaming timezone (CEST)
-      const nowUtc    = new Date();
-      const cestOffset = 2 * 60; // CEST = UTC+2 (covers most of forsen's streaming season)
-      const cestMins  = (nowUtc.getUTCHours() * 60 + nowUtc.getUTCMinutes() + cestOffset) % (24 * 60);
-      const streamWindow = cestMins >= (16 * 60 + 30) && cestMins < (22 * 60);
-      if (streamWindow) {
-        return `@${user} forsenSleeper Forsen is taking today off.${lastRunPart}`;
-      }
-      return `@${user} forsenSleeper forsen is offline right now.${lastRunPart}`;
+      return `@${user} xqcS xQc is offline right now.${lastRunPart}`;
     }
 
-    // ── Case 2: forsen is live but not playing Minecraft ─────────────────
-    if (!isMinecraft) {
-      const currentCategory = ctx.getForsenCategory ? ctx.getForsenCategory() : null;
-      const categoryPart    = currentCategory ? ` instead he is playing ${currentCategory}` : "";
-      return `@${user} forsenDank forsen is not speedrunning Minecraft today,${categoryPart}.${lastRunPart}`;
+    // ── Case 2: live but not playing Minecraft ────────────────────────────
+    if (!isMC) {
+      const cat = ctx.getXqcCategory ? ctx.getXqcCategory() : null;
+      const catPart = cat ? ` instead he is playing ${cat}` : "";
+      return `@${user} xqcDank xQc is not speedrunning Minecraft today,${catPart}.${lastRunPart}`;
     }
 
-    // ── Case 3: live + Minecraft — fetch current run data ─────────────────
+    // ── Case 3: live + Minecraft — fetch current run ──────────────────────
     Promise.resolve().then(async () => {
       try {
         const URLS = [
-          "https://forsenmc.piggeywig2000.dev/api/time/latest?streamer=forsen",
-          "https://forsenmc.piggeywig2000.dev/api/times/latest?streamer=forsen",
-          "https://forsenmc.piggeywig2000.dev/api/Times/latest?streamer=forsen",
+          "https://xqcmc.piggeywig2000.dev/api/time/latest?streamer=xqc",
+          "https://xqcmc.piggeywig2000.dev/api/times/latest?streamer=xqc",
+          "https://xqcmc.piggeywig2000.dev/api/Times/latest?streamer=xqc",
         ];
 
-        let entry = ctx.forsenMcLatestData && ctx.forsenMcLatestData();
+        let entry = ctx.xqcMcLatestData && ctx.xqcMcLatestData();
 
         if (!entry) {
           for (const url of URLS) {
@@ -1030,28 +1025,27 @@ function handle(channel, tags, message, ctx) {
 
         if (!entry) {
           return client.say(replyTo,
-            `@${user} forsenE forsen is playing Minecraft but no run timer detected yet.${lastRunPart}`
+            `@${user} xqcSmile xQc is playing Minecraft but no run timer detected yet.${lastRunPart}`
           ).catch(() => {});
         }
 
-        // igt field is seconds (e.g. 572.4) based on Railway logs
         const igtSecs = entry.igt != null ? parseFloat(entry.igt) :
                         entry.gameTime != null ? parseFloat(entry.gameTime) :
                         entry.game_time != null ? parseFloat(entry.game_time) : null;
 
         if (!igtSecs || igtSecs === 0) {
           return client.say(replyTo,
-            `@${user} forsenE forsen is playing Minecraft — timer at 0 or not started yet.${lastRunPart}`
+            `@${user} xqcSmile xQc is playing Minecraft — timer at 0 or not started yet.${lastRunPart}`
           ).catch(() => {});
         }
 
         const igtStr = fmtSecs(igtSecs);
         client.say(replyTo,
-          `@${user} 🎮 forsen MC — ⏱️ IGT: ${igtStr} | twitch.tv/forsen`
+          `@${user} 🎮 xQc MC — ⏱️ IGT: ${igtStr} | twitch.tv/xqc`
         ).catch(() => {});
 
       } catch (e) {
-        client.say(replyTo, `@${user} ⚠️ forsenrun lookup failed: ${e.message}`).catch(() => {});
+        client.say(replyTo, `@${user} ⚠️ xqcrun lookup failed: ${e.message}`).catch(() => {});
       }
     });
     return null;
