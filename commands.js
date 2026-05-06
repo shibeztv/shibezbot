@@ -964,7 +964,7 @@ function handle(channel, tags, message, ctx) {
   if (cmd === "forsenrun") {
     const user = (tags.username || "").toLowerCase();
     // forsen beat the world record — this command now shows the celebration
-    return `@${user} forsenSmug 🏆 FORSEN DID IT! New world record: 14:18 IGT TeaTime He will be remembered forever bajs FeelsStrongMan`;
+    return `@${user} forsenSmug 🏆 FORSEN DID IT! New world record: 14:18 IGT forsenSmug TeaTime He will be remembered forever bajs FeelsStrongMan`;
   }
 
   if (cmd === "xqcrun") {
