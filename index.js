@@ -123,7 +123,9 @@ async function fetchAppToken() {
 
 async function updateLiveChannels() {
   if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) return;
-  const channels = allChannels();
+  // Always include xqc and forsen so category tracking works for ?xqcrun and ?forsenrun
+  const TRACKED_EXTRA = ["xqc", "forsen"];
+  const channels = [...new Set([...allChannels(), ...TRACKED_EXTRA])];
   if (channels.length === 0) return;
   try {
     if (!appAccessToken) appAccessToken = await fetchAppToken();
