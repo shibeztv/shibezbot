@@ -909,6 +909,25 @@ function handle(channel, tags, message, ctx) {
     if (!state.forsenAlertChannels) state.forsenAlertChannels = {};
     if (!state.forsenAlertChannels[ch]) state.forsenAlertChannels[ch] = [];
 
+    // Owner-only: ?forsenalert test [channel] — fires a fake alert to verify the system works
+    if (sub === "test" && isOwner(tags)) {
+      const targetCh    = args[1] ? args[1].toLowerCase().replace(/^#/, "").trim() : ch;
+      const { client }  = ctx;
+      const channelSubs = (state.forsenAlertChannels[targetCh] || []);
+      const alertMsg    = `xqcSmile 🧪 TEST ALERT — xQc alert system is working! Subs in #${targetCh}: ${channelSubs.length || "none"}`;
+      const CHUNK_SIZE  = 7;
+      if (channelSubs.length === 0) {
+        client.say(`#${targetCh}`, alertMsg).catch(() => {});
+      } else {
+        for (let i = 0; i < channelSubs.length; i += CHUNK_SIZE) {
+          const chunk = channelSubs.slice(i, i + CHUNK_SIZE);
+          const msg   = `${chunk.map(u => `@${u}`).join(" ")} ${alertMsg}`;
+          setTimeout(() => client.say(`#${targetCh}`, msg.slice(0, 499)).catch(() => {}), Math.floor(i / CHUNK_SIZE) * 1800);
+        }
+      }
+      return `@${user} 🧪 Test alert fired in #${targetCh} (${channelSubs.length} subs).`;
+    }
+
     // Owner-only: ?forsenalert add <user> [channel]
     if (sub === "add" && isOwner(tags)) {
       const target  = (args[1] || "").toLowerCase().replace(/^@/, "").trim();

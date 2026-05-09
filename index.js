@@ -343,8 +343,8 @@ function extractRealTime(entry) {
 }
 
 async function checkXqcMc() {
-  // Only poll when xQc is live
-  if (!liveChannels.has("xqc")) return;
+  const twitchTracking = TWITCH_CLIENT_ID && TWITCH_CLIENT_SECRET;
+  if (twitchTracking && liveChannels.size > 0 && !liveChannels.has("xqc")) return;
 
   try {
     let data = null;
@@ -368,7 +368,13 @@ async function checkXqcMc() {
     if (!entry) return;
     xqcMcLatestData = entry;
 
-    const gameSecs = entry.igt != null ? parseFloat(entry.igt) : parseTimeToSecs(extractGameTime(entry));
+    // API returns seconds as a number (game_time, igt) — parseFloat handles both
+    // numbers and numeric strings. parseTimeToSecs is the fallback for "MM:SS" strings.
+    const gameSecs =
+      entry.igt       != null ? parseFloat(entry.igt) :
+      entry.gameTime  != null ? parseFloat(entry.gameTime) :
+      entry.game_time != null ? parseFloat(entry.game_time) :
+      parseTimeToSecs(extractGameTime(entry));
 
     if (!gameSecs || gameSecs === 0) {
       console.log(`🎮 [xqcmc] Timer is zero — no active run.`);
@@ -391,10 +397,18 @@ async function checkXqcMc() {
       const targets = [...new Set([...state.postChannels, ...(state.manualChannels || [])])].filter(ch => ch !== "xqc");
       for (const ch of targets) {
         const channelSubs = (state.forsenAlertChannels && state.forsenAlertChannels[ch]) || [];
-        const mentions    = channelSubs.length > 0 ? channelSubs.map(u => `@${u}`).join(" ") + " " : "";
-        const msg         = `${mentions}xqcSmile 🎯 xQc is on a god run! Current time: ${timeStr} — twitch.tv/xqc ${hint}`;
-        console.log(`🎮 [xqcmc] Firing alert in #${ch}: ${msg}`);
-        client.say(`#${ch}`, msg).catch(() => {});
+        const alertMsg    = `xqcSmile 🎯 xQc is on a god run! Current time: ${timeStr} — twitch.tv/xqc ${hint}`;
+        const CHUNK_SIZE  = 7;
+        if (channelSubs.length === 0) {
+          client.say(`#${ch}`, alertMsg).catch(() => {});
+        } else {
+          for (let i = 0; i < channelSubs.length; i += CHUNK_SIZE) {
+            const chunk = channelSubs.slice(i, i + CHUNK_SIZE);
+            const msg   = `${chunk.map(u => `@${u}`).join(" ")} ${alertMsg}`;
+            setTimeout(() => client.say(`#${ch}`, msg.slice(0, 499)).catch(() => {}), Math.floor(i / CHUNK_SIZE) * 1800);
+          }
+        }
+        console.log(`🎮 [xqcmc] Firing alert in #${ch} (${channelSubs.length} subs, ${Math.ceil(channelSubs.length / 7) || 1} msg(s))`);
       }
     }
   } catch (e) {
