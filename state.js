@@ -18,8 +18,7 @@ const DEFAULTS = {
   minCorpus:        50,
   active:           true,
   greeterEnabled:    false,
-  xqcAlertEnabled:   true,  // ?xqcalert on/off  — controls API polling + alert firing
-  forsenAlertEnabled: true, // ?forsenalert on/off — controls alert firing to subscribers
+  xqcAlertEnabled:   true,   // ?xqcalert on/off — when false, stops ALL xqcmc API calls
   notifyEnabled:    {},   // { channelName: true/false } (legacy, kept for compat)
   notifyEvents:     {},   // { channelName: { live: bool, offline: bool, category: bool } }
   notifyUsers:      {},   // { channelName: ["user1", "user2", ...] }

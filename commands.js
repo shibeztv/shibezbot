@@ -60,6 +60,23 @@ function handle(channel, tags, message, ctx) {
 
   if (isOwner(tags)) {
 
+    // ?xqcalert on/off — completely stops or restarts xqcmc API polling
+    if (cmd === "xqcalert") {
+      const sub = (args[0] || "").toLowerCase();
+      if (sub === "on") {
+        state.xqcAlertEnabled = true;
+        saveState();
+        return `@${user} ✅ xQc MC alert ON — bot will resume polling xqcmc.piggeywig2000.dev every 45s.`;
+      }
+      if (sub === "off") {
+        state.xqcAlertEnabled = false;
+        saveState();
+        return `@${user} 🔕 xQc MC alert OFF — bot will make zero requests to xqcmc until you turn it back on.`;
+      }
+      const status = state.xqcAlertEnabled !== false ? "🟢 ON" : "🔴 OFF";
+      return `@${user} xQc MC alert is ${status}. Use ${PREFIX}xqcalert on or ${PREFIX}xqcalert off.`;
+    }
+
     if (cmd === "help") {
       return (
         `👑 Owner (?): ` +
@@ -909,22 +926,6 @@ function handle(channel, tags, message, ctx) {
     if (!state.forsenAlertChannels) state.forsenAlertChannels = {};
     if (!state.forsenAlertChannels[ch]) state.forsenAlertChannels[ch] = [];
 
-    // Owner-only: ?forsenalert on/off — toggle alert firing globally
-    if ((sub === "on" || sub === "off") && isOwner(tags)) {
-      state.forsenAlertEnabled = sub === "on";
-      saveState();
-      return sub === "on"
-        ? `@${user} ✅ forsenalert enabled — bot will fire xQc god run alerts to subscribers.`
-        : `@${user} 🔕 forsenalert disabled — bot will NOT fire alerts to subscribers (polling continues).`;
-    }
-
-    // Owner-only: ?forsenalert status
-    if (sub === "status" && isOwner(tags)) {
-      const alertStatus = state.forsenAlertEnabled !== false ? "🟢 ON" : "🔴 OFF";
-      const pollStatus  = state.xqcAlertEnabled    !== false ? "🟢 ON" : "🔴 OFF";
-      return `@${user} Alert firing: ${alertStatus} | Polling: ${pollStatus}`;
-    }
-
     // Owner-only: ?forsenalert test [channel] — fires a fake alert to verify the system works
     if (sub === "test" && isOwner(tags)) {
       const targetCh    = args[1] ? args[1].toLowerCase().replace(/^#/, "").trim() : ch;
@@ -1000,25 +1001,6 @@ function handle(channel, tags, message, ctx) {
     const user = (tags.username || "").toLowerCase();
     // forsen beat the world record — this command now shows the celebration
     return `@${user} forsenSmug 🏆 FORSEN DID IT! New world record: 14:18 IGT forsenSmug TeaTime He will be remembered forever bajs FeelsStrongMan`;
-  }
-
-  // ?xqcalert on/off — owner only, toggles xQc MC API polling globally
-  if (cmd === "xqcalert") {
-    if (!isOwner(tags)) return null;
-    const sub = (args[0] || "").toLowerCase();
-    if (sub === "on") {
-      state.xqcAlertEnabled = true;
-      saveState();
-      return `@${user} ✅ xQc MC polling enabled — bot will poll xqcmc and fire alerts.`;
-    }
-    if (sub === "off") {
-      state.xqcAlertEnabled = false;
-      saveState();
-      return `@${user} 🔕 xQc MC polling disabled — bot will stop fetching from xqcmc.`;
-    }
-    const pollStatus  = state.xqcAlertEnabled    !== false ? "🟢 ON" : "🔴 OFF";
-    const alertStatus = state.forsenAlertEnabled  !== false ? "🟢 ON" : "🔴 OFF";
-    return `@${user} Polling: ${pollStatus} | Alert firing: ${alertStatus} — use ${PREFIX}xqcalert on/off or ${PREFIX}forsenalert on/off.`;
   }
 
   if (cmd === "xqcrun") {

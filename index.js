@@ -257,7 +257,7 @@ function isChannelLive(ch) {
   return liveChannels.has(ch.toLowerCase());
 }
 
-setInterval(updateLiveChannels, 10 * 60 * 1000);  // every 10 min
+setInterval(updateLiveChannels, 2 * 60 * 1000);
 
 // ── xQc MC speedrun alert ─────────────────────────────────────────────────────
 // Polls the xqcmc tracker every 45s while xQc is live.
@@ -343,6 +343,7 @@ function extractRealTime(entry) {
 }
 
 async function checkXqcMc() {
+  if (state.xqcAlertEnabled === false) return;  // completely disabled — no network calls at all
   const twitchTracking = TWITCH_CLIENT_ID && TWITCH_CLIENT_SECRET;
   if (twitchTracking && liveChannels.size > 0 && !liveChannels.has("xqc")) return;
 
@@ -557,22 +558,7 @@ function leaveChannel(ch) {
 
 // ── Learn from chat messages ──────────────────────────────────────────────────
 
-const newLines      = [];
-let   dailyNewLines = 0;          // resets at midnight — stops learning after 20k/day
-const DAILY_LINE_CAP = 20_000;    // max new lines learned per day
-
-// Reset daily counter at midnight
-function scheduleDailyLinecountReset() {
-  const now  = new Date();
-  const next = new Date(now);
-  next.setHours(24, 0, 0, 0);
-  setTimeout(() => {
-    dailyNewLines = 0;
-    console.log("🔄  Daily line cap reset.");
-    scheduleDailyLinecountReset();
-  }, next - now);
-}
-scheduleDailyLinecountReset();
+const newLines = [];
 
 // ── Per-user tracking ─────────────────────────────────────────────────────────
 
@@ -590,10 +576,8 @@ function learnMessage(username, message) {
   if (username.toLowerCase() === BOT_USERNAME.toLowerCase()) return;
   if (message.startsWith("!") || message.startsWith("/") || message.startsWith("$") || message.startsWith("&")) return;
   if (message.length < 10) return;
-  if (dailyNewLines >= DAILY_LINE_CAP) return;  // hit today's cap — stop learning until midnight
   markov.train(message);
   newLines.push(message.replace(/[\r\n]/g, " "));
-  dailyNewLines++;
 
   // Track per-user messages for &markov and &mock
   const u = username.toLowerCase();
@@ -606,11 +590,11 @@ function learnMessage(username, message) {
 setInterval(() => {
   if (newLines.length === 0) return;
   fs.appendFileSync(LEARNED_FILE, newLines.join("\n") + "\n", "utf8");
-  console.log(`💾  Saved ${newLines.length} new lines. Total corpus: ${markov.size} | Daily: ${dailyNewLines}/${DAILY_LINE_CAP}`);
+  console.log(`💾  Saved ${newLines.length} new lines. Total corpus: ${markov.size}`);
   newLines.length = 0;
-  // Trim corpus to 20k lines max to keep RAM low
-  const CORPUS_TRIM_AT = 22_000;
-  const CORPUS_TRIM_TO = 20_000;
+  // Trim the file if it has grown too large to avoid OOM on next restart
+  const CORPUS_TRIM_AT   = 120_000;
+  const CORPUS_TRIM_TO   = 100_000;
   try {
     const allLines = fs.readFileSync(LEARNED_FILE, "utf8").split("\n").filter(Boolean);
     if (allLines.length > CORPUS_TRIM_AT) {
@@ -618,7 +602,7 @@ setInterval(() => {
       console.log(`✂️   Corpus trimmed to ${CORPUS_TRIM_TO} lines (was ${allLines.length}).`);
     }
   } catch (e) { /* non-fatal */ }
-}, 5 * 60_000);  // every 5 min (was 60s)
+}, 60_000);
 
 // ── Watchtime tracker — ticks every 60s while stream is live ─────────────────
 const WATCHTIME_FILE = path.join(DATA_DIR, "watchtime.json");
