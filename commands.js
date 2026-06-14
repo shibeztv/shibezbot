@@ -62,6 +62,7 @@ function handle(channel, tags, message, ctx) {
 
     // ?xqcalert on/off — completely stops or restarts xqcmc API polling
     if (cmd === "xqcalert") {
+      const user = (tags.username || "").toLowerCase();
       const sub = (args[0] || "").toLowerCase();
       if (sub === "on") {
         state.xqcAlertEnabled = true;
