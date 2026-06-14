@@ -17,7 +17,9 @@ const DEFAULTS = {
   cooldownMessages: 0,        // global default cooldown
   minCorpus:        50,
   active:           true,
-  greeterEnabled:   false,
+  greeterEnabled:    false,
+  xqcAlertEnabled:   true,  // ?xqcalert on/off  — controls API polling + alert firing
+  forsenAlertEnabled: true, // ?forsenalert on/off — controls alert firing to subscribers
   notifyEnabled:    {},   // { channelName: true/false } (legacy, kept for compat)
   notifyEvents:     {},   // { channelName: { live: bool, offline: bool, category: bool } }
   notifyUsers:      {},   // { channelName: ["user1", "user2", ...] }
