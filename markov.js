@@ -2,11 +2,19 @@
  * markov.js — Bigram Markov chain text generator
  */
 class MarkovChain {
-  constructor(order = 2) {
+  constructor(order = 2, opts = {}) {
     this.order = order;
     this.chain = new Map();
     this.starts = [];
     this.corpusSize = 0;
+
+    // ── Memory caps ─────────────────────────────────────────────────────────
+    // Without these, `starts` and every array inside `chain` grow forever for
+    // the lifetime of the process (they were only ever trimmed by restarting
+    // and reloading from the trimmed corpus file). These caps make the chain
+    // self-limiting in RAM, independent of restarts.
+    this.maxStarts     = opts.maxStarts     || 20_000; // distinct sentence-starts remembered
+    this.maxNextPerKey = opts.maxNextPerKey || 40;      // continuations remembered per bigram
   }
 
   train(text) {
@@ -21,13 +29,34 @@ class MarkovChain {
     if (words.length < this.order + 1) return;
 
     this.starts.push(words.slice(0, this.order).join(" "));
+    if (this.starts.length > this.maxStarts) {
+      // Drop the oldest starts once we're over the cap (cheap amortized trim)
+      this.starts.splice(0, this.starts.length - this.maxStarts);
+    }
+
     for (let i = 0; i <= words.length - this.order - 1; i++) {
       const key  = words.slice(i, i + this.order).join(" ");
       const next = words[i + this.order];
-      if (!this.chain.has(key)) this.chain.set(key, []);
-      this.chain.get(key).push(next);
+      let arr = this.chain.get(key);
+      if (!arr) { arr = []; this.chain.set(key, arr); }
+      if (arr.length >= this.maxNextPerKey) arr.shift(); // forget the oldest continuation
+      arr.push(next);
     }
     this.corpusSize++;
+  }
+
+  /**
+   * Rebuild the chain from scratch using only the given lines. Use this
+   * periodically (e.g. daily) with the same capped set of lines you already
+   * persist to learned_corpus.txt, so total vocabulary size (number of
+   * distinct bigram keys) also gets bounded over time, not just the arrays
+   * within it.
+   */
+  rebuildFrom(lines) {
+    this.chain = new Map();
+    this.starts = [];
+    this.corpusSize = 0;
+    this.trainBulk(lines);
   }
 
   trainBulk(lines) {

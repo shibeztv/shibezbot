@@ -100,6 +100,31 @@ if (fs.existsSync(LEARNED_FILE)) {
   console.log(`🧠  Learned corpus loaded: ${lines.length} lines | total: ${markov.size}`);
 }
 
+// ── Periodic in-memory rebuild ────────────────────────────────────────────────
+// The per-key caps in markov.js stop individual arrays from growing forever,
+// but the *number* of distinct bigram keys (vocabulary size) can still creep
+// up slowly over weeks/months, especially if you're learning from busy
+// channels via ?addlearn. Rebuilding the chain from the already-capped files
+// on disk once a day keeps total memory bounded without a process restart
+// or any downtime — it's the same thing that happens on a normal restart,
+// just done in place.
+function rebuildMarkovFromDisk() {
+  let lines = [];
+  if (fs.existsSync(SEED_FILE)) {
+    lines = lines.concat(
+      fs.readFileSync(SEED_FILE, "utf8").split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("#"))
+    );
+  }
+  if (fs.existsSync(LEARNED_FILE)) {
+    let learned = fs.readFileSync(LEARNED_FILE, "utf8").split("\n").map(l => l.trim()).filter(Boolean);
+    if (learned.length > CORPUS_LOAD_LIMIT) learned = learned.slice(-CORPUS_LOAD_LIMIT);
+    lines = lines.concat(learned);
+  }
+  markov.rebuildFrom(lines);
+  console.log(`🧹  [${new Date().toLocaleTimeString()}] Rebuilt Markov chain from disk — corpus: ${markov.size} lines.`);
+}
+setInterval(rebuildMarkovFromDisk, 24 * 60 * 60 * 1000); // once a day is plenty
+
 // ── Live channel tracking ─────────────────────────────────────────────────────
 
 const liveChannels     = new Set();
@@ -672,6 +697,42 @@ function scheduleMidnightReset() {
   }, next - now);
 }
 scheduleMidnightReset();
+
+// ── Optional: scheduled self-restart safety net ───────────────────────────────
+// With the Markov chain caps + daily in-memory rebuild above, this shouldn't
+// be needed anymore — but it's a cheap safety net against any other slow
+// leak (e.g. a dependency, or user dictionaries growing on a very large
+// audience). Everything already persists to disk and reloads cleanly on
+// boot, so a clean restart at a quiet hour is safe.
+//
+// Enable by setting DAILY_RESTART=true in your env vars (Railway → Variables).
+// RESTART_HOUR (0-23, server local time) picks when it happens; default 6 (6am).
+//
+// NOTE: uses process.exit(1) rather than 0 — some hosts (Railway included,
+// depending on your restart policy) only auto-restart on a non-zero/crash
+// exit code. Double check your Railway service's restart policy is set to
+// "Always" if this doesn't bring the bot back.
+if (String(process.env.DAILY_RESTART).toLowerCase() === "true") {
+  const RESTART_HOUR = parseInt(process.env.RESTART_HOUR || "6", 10);
+  function scheduleDailyRestart() {
+    const now  = new Date();
+    let next   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), RESTART_HOUR, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    setTimeout(() => {
+      console.log(`🔁  Scheduled daily restart — saving state and exiting cleanly…`);
+      try { if (newLines.length > 0) fs.appendFileSync(LEARNED_FILE, newLines.join("\n") + "\n", "utf8"); } catch (e) {}
+      try { fs.writeFileSync(WATCHTIME_FILE, JSON.stringify(watchtime, null, 2), "utf8"); } catch (e) {}
+      try { fs.writeFileSync(LINECOUNT_FILE, JSON.stringify(linecount), "utf8"); } catch (e) {}
+      try { fs.writeFileSync(LASTSEEN_FILE,  JSON.stringify(lastseen),  "utf8"); } catch (e) {}
+      try { fs.writeFileSync(FIRSTLINE_FILE, JSON.stringify(firstline), "utf8"); } catch (e) {}
+      saveState();
+      client.disconnect();
+      process.exit(1);
+    }, next - now);
+    console.log(`🔁  Daily restart scheduled for ${next.toLocaleString()}.`);
+  }
+  scheduleDailyRestart();
+}
 
 const ctx = {
   state, saveState,
