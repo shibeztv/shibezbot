@@ -13,6 +13,101 @@ const OWNER    = "shlbez";
 
 const song = require("./song");
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ── ANALYTICS: feeds the VOD site's "Monthly Recap" ───────────────────────
+// Twitch doesn't expose historical viewer counts or chat stats for past
+// streams — TwitchTracker/SullyGnome-style numbers only exist because
+// something is polling and logging LIVE, continuously. This bot is already
+// connected 24/7, so it's the natural place for that: every few minutes
+// while shlbez is live, snapshot the current viewer count, and snapshot
+// today's chat totals (reusing dailyCount, which index.js already tracks
+// per-message for ?loseroftheday/?linecount — no new message tracking
+// needed here, just reading what's already being counted).
+//
+// Writes go to the same Firestore project the site already uses
+// (shibezvods-4676a), via firebase-admin so it can write regardless of
+// client-side security rules. Setup required (one-time):
+//   1. npm install firebase-admin
+//   2. Firebase console → Project Settings → Service Accounts →
+//      "Generate new private key" for the shibezvods-4676a project.
+//   3. Save that JSON file next to this one as firebase-service-account.json
+//      (and add it to .gitignore — it's a credential, don't commit it).
+//      Or set FIREBASE_SERVICE_ACCOUNT_PATH to point at it elsewhere.
+// Until that's done, this fails quietly (one console.warn) and every other
+// bot feature keeps working as normal.
+const ANALYTICS_CHANNEL = OWNER; // "shlbez" — the site's recap is only about this channel
+const ANALYTICS_POLL_MS = 3 * 60 * 1000; // how often to sample while live
+
+let _fbDb = null; // null = not tried yet, false = tried and failed, object = ready
+function _analyticsDb() {
+  if (_fbDb !== null) return _fbDb || null;
+  try {
+    const admin = require("firebase-admin");
+    if (!admin.apps.length) {
+      const path = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "./firebase-service-account.json";
+      const serviceAccount = require(path);
+      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    }
+    _fbDb = admin.firestore();
+  } catch (e) {
+    console.warn(`⚠️  [analytics] Firestore not configured (${e.message}) — viewer/chat tracking for the recap page is disabled. See the ANALYTICS setup comment near the top of commands.js.`);
+    _fbDb = false;
+  }
+  return _fbDb || null;
+}
+
+async function _analyticsTick(ctx) {
+  const db = _analyticsDb();
+  if (!db) return;
+  const { helixGet, dailyCount } = ctx;
+  if (!helixGet) return;
+
+  let live;
+  try {
+    const streamData = await helixGet(`streams?user_login=${ANALYTICS_CHANNEL}`);
+    live = streamData && streamData.data && streamData.data[0];
+  } catch (e) { return; }
+  if (!live) return; // only log while actually streaming — matches how the site groups streams by day
+
+  const today = new Date().toISOString().slice(0, 10);
+  const now = Date.now();
+
+  // One doc per sample — same shape the site's recap page itself already
+  // writes opportunistically, so both sources merge into one average/peak.
+  db.collection("viewerSnapshots").add({
+    date: today,
+    viewer_count: live.viewer_count || 0,
+    ts: now,
+    source: "bot",
+  }).catch(e => console.warn("⚠️  [analytics] viewer snapshot failed:", e.message));
+
+  const dc = (dailyCount && dailyCount[ANALYTICS_CHANNEL]) || {};
+  const chatters = Object.keys(dc);
+  const messageCount = Object.values(dc).reduce((a, b) => a + b, 0);
+  if (messageCount > 0) {
+    // Overwritten each poll (not incremented) so a bot restart mid-stream
+    // can't double-count — dailyCount itself is the source of truth.
+    db.collection("chatStats").doc(today).set({
+      day: today,
+      messageCount,
+      chatters,
+      updatedAt: now,
+    }).catch(e => console.warn("⚠️  [analytics] chat stats snapshot failed:", e.message));
+  }
+}
+
+let _analyticsStarted = false;
+// Call this once from index.js at startup for the cleanest wiring
+// (e.g. right after your client connects). If that's not touched, handle()
+// below calls it lazily on the first message it sees instead — works fine,
+// just means the very first poll can be delayed until chat activity starts.
+function startAnalyticsPoller(ctx) {
+  if (_analyticsStarted) return;
+  _analyticsStarted = true;
+  setTimeout(() => _analyticsTick(ctx).catch(() => {}), 15_000);
+  setInterval(() => _analyticsTick(ctx).catch(() => {}), ANALYTICS_POLL_MS);
+}
+
 function isOwner(tags) {
   return (tags.username || "").toLowerCase() === OWNER;
 }
@@ -38,6 +133,8 @@ function parseCommand(message) {
 }
 
 function handle(channel, tags, message, ctx) {
+  startAnalyticsPoller(ctx); // no-op after the first call
+
   const parsed = parseCommand(message);
   if (!parsed) return null;
 
@@ -2242,7 +2339,7 @@ function handleSongCommand(channel, ch, tags, ctx) {
   });
 }
 
-module.exports = { handle, isOwner, isModOrVip, isBroadcaster, PREFIX };
+module.exports = { handle, isOwner, isModOrVip, isBroadcaster, PREFIX, startAnalyticsPoller };
 
 // ── Local helper — mirrors formatAgo from index.js ───────────────────────────
 function cmdFormatAgo(ms) {
