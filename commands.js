@@ -33,6 +33,11 @@ const song = require("./song");
 //   3. Save that JSON file next to this one as firebase-service-account.json
 //      (and add it to .gitignore — it's a credential, don't commit it).
 //      Or set FIREBASE_SERVICE_ACCOUNT_PATH to point at it elsewhere.
+//   4. Set TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET in the environment
+//      (same app the site used to use). The bot mints a Twitch app access
+//      token from these and parks it in Firestore at config/twitchAppToken
+//      so the static site can read the Helix API WITHOUT shipping the
+//      client secret to every visitor's browser.
 // Until that's done, this fails quietly (one console.warn) and every other
 // bot feature keeps working as normal.
 const ANALYTICS_CHANNEL = OWNER; // "shlbez" — the site's recap is only about this channel
@@ -56,10 +61,169 @@ function _analyticsDb() {
   return _fbDb || null;
 }
 
+// ── Chat stat accounting ──────────────────────────────────────────────────
+// dailyCount is a live counter owned by index.js, and two things can make it
+// jump backwards underneath us:
+//   a) the bot restarts mid-day — it starts over from {}
+//   b) index.js zeroes it on its own schedule (midnight, stream end, etc.)
+// A plain overwrite of the day doc would silently shrink the day's total in
+// either case, and a plain increment would double-count every poll. So we
+// track what THIS process has contributed since the last reset and add it on
+// top of whatever was already in Firestore when we first touched the day:
+//
+//   written = docBase (read once per day, before our first write)
+//           + acc     (segments already closed by a reset we observed)
+//           + segment (raw - baseline, the current uninterrupted run)
+//
+// A backwards jump in raw closes the current segment into acc and rebaselines
+// at 0, so nothing is lost and nothing is counted twice. Chatters are always
+// unioned, which is naturally idempotent.
+let _chat = null; // { day, docBase, acc, accChatters:Set, baseline, lastSegment }
+
+function _chatTotals(dailyCount) {
+  const dc = (dailyCount && dailyCount[ANALYTICS_CHANNEL]) || {};
+  return {
+    count: Object.values(dc).reduce((a, b) => a + (Number(b) || 0), 0),
+    chatters: Object.keys(dc),
+  };
+}
+
+async function _chatStatsWrite(db, dailyCount, today, now) {
+  const raw = _chatTotals(dailyCount);
+
+  // New calendar day (or first tick of the process): rebaseline so whatever
+  // dailyCount is carrying from yesterday isn't attributed to today, and read
+  // the existing doc once so our additions stack on top of it instead of
+  // replacing it.
+  if (!_chat || _chat.day !== today) {
+    // Distinguish the two ways we get here:
+    //  - _chat === null: first tick of this process. Whatever dailyCount
+    //    holds was counted since the process started, so it IS today's —
+    //    baseline 0 keeps it.
+    //  - day changed under a running poller: dailyCount may still be
+    //    carrying yesterday's running total (index.js resets on its own
+    //    schedule, which may not be midnight), so baseline it away.
+    const rollover = !!_chat && _chat.day !== today;
+    const prevRaw = _chat ? _chat.lastRaw : 0;
+    let docBase = { count: 0, chatters: [] };
+    try {
+      const prev = await db.collection("chatStats").doc(today).get();
+      if (prev.exists) {
+        const v = prev.data() || {};
+        docBase = { count: v.messageCount || 0, chatters: v.chatters || [] };
+      }
+    } catch (e) {
+      // Can't read the day doc — bail rather than risk clobbering it with a
+      // total that doesn't include what's already there.
+      console.warn("⚠️  [analytics] chat stats read failed, skipping this poll:", e.message);
+      return;
+    }
+    _chat = {
+      day: today,
+      docBase,
+      acc: 0,
+      accChatters: new Set(docBase.chatters),
+      // At a rollover, baseline at the last reading from YESTERDAY, not at
+      // the current one: messages sent between midnight and this first poll
+      // of the new day are already excluded from yesterday's written total,
+      // so crediting them to today is both correct and gap-free.
+      baseline: rollover ? prevRaw : 0,
+      lastSegment: 0,
+      lastRaw: rollover ? prevRaw : 0,
+    };
+  }
+
+  // Backwards jump since the previous poll → a reset happened (bot restart or
+  // index.js zeroing dailyCount). Bank the segment we'd measured and start
+  // counting again from zero. Compared against the previous raw reading, not
+  // the baseline — the baseline is usually 0 and would never catch a drop.
+  if (raw.count < _chat.lastRaw) {
+    _chat.acc += _chat.lastSegment;
+    _chat.baseline = 0;
+  }
+
+  const segment = Math.max(0, raw.count - _chat.baseline);
+  _chat.lastSegment = segment;
+  _chat.lastRaw = raw.count;
+  raw.chatters.forEach(c => _chat.accChatters.add(c));
+
+  const messageCount = _chat.docBase.count + _chat.acc + segment;
+  if (messageCount <= 0) return;
+
+  try {
+    await db.collection("chatStats").doc(today).set({
+      day: today,
+      messageCount,
+      chatters: Array.from(_chat.accChatters),
+      updatedAt: now,
+    });
+  } catch (e) {
+    console.warn("⚠️  [analytics] chat stats snapshot failed:", e.message);
+  }
+}
+
+// ── Twitch app token relay ────────────────────────────────────────────────
+// The VOD site needs an app access token to read the Helix API, but a static
+// page can't hold a client secret — anyone can open devtools and take it.
+// The bot already runs 24/7 with the credentials, so it mints the token here
+// and parks it in Firestore; the site just reads it. An app token only grants
+// public, read-only Helix access and expires on its own, so it's safe to hand
+// to browsers in a way the secret never was.
+const TOKEN_DOC = { collection: "config", doc: "twitchAppToken" };
+const TOKEN_REFRESH_BEFORE_MS = 3 * 24 * 60 * 60 * 1000; // renew with 3 days to spare
+let _tokenWarned = false;
+
+async function _refreshTwitchAppToken(db) {
+  const clientId = process.env.TWITCH_CLIENT_ID;
+  const clientSecret = process.env.TWITCH_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    if (!_tokenWarned) {
+      _tokenWarned = true;
+      console.warn("⚠️  [analytics] TWITCH_CLIENT_ID / TWITCH_CLIENT_SECRET not set — the VOD site can't get an app token. See the ANALYTICS setup comment at the top of commands.js.");
+    }
+    return;
+  }
+
+  // Only mint a new one when the stored token is missing or close to expiry.
+  try {
+    const cur = await db.collection(TOKEN_DOC.collection).doc(TOKEN_DOC.doc).get();
+    if (cur.exists) {
+      const expiresAt = (cur.data() || {}).expires_at || 0;
+      if (expiresAt - Date.now() > TOKEN_REFRESH_BEFORE_MS) return;
+    }
+  } catch (e) { /* fall through and mint a fresh one */ }
+
+  try {
+    const r = await fetch("https://id.twitch.tv/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: "client_credentials",
+      }),
+    });
+    const d = await r.json();
+    if (!d.access_token) throw new Error(d.message || "no access_token in response");
+    await db.collection(TOKEN_DOC.collection).doc(TOKEN_DOC.doc).set({
+      access_token: d.access_token,
+      expires_at: Date.now() + (d.expires_in || 3600) * 1000,
+      updated_at: Date.now(),
+    });
+    console.log("✅ [analytics] refreshed Twitch app token for the VOD site");
+  } catch (e) {
+    console.warn("⚠️  [analytics] Twitch app token refresh failed:", e.message);
+  }
+}
+
 async function _analyticsTick(ctx) {
   const db = _analyticsDb();
   if (!db) return;
   const { helixGet, dailyCount } = ctx;
+
+  // Runs regardless of live status — the site needs a valid token at all times.
+  await _refreshTwitchAppToken(db);
+
   if (!helixGet) return;
 
   let live;
@@ -72,8 +236,8 @@ async function _analyticsTick(ctx) {
   const today = new Date().toISOString().slice(0, 10);
   const now = Date.now();
 
-  // One doc per sample — same shape the site's recap page itself already
-  // writes opportunistically, so both sources merge into one average/peak.
+  // One doc per sample — the site reads every sample in a month and reduces
+  // them into one average/peak.
   db.collection("viewerSnapshots").add({
     date: today,
     viewer_count: live.viewer_count || 0,
@@ -81,19 +245,7 @@ async function _analyticsTick(ctx) {
     source: "bot",
   }).catch(e => console.warn("⚠️  [analytics] viewer snapshot failed:", e.message));
 
-  const dc = (dailyCount && dailyCount[ANALYTICS_CHANNEL]) || {};
-  const chatters = Object.keys(dc);
-  const messageCount = Object.values(dc).reduce((a, b) => a + b, 0);
-  if (messageCount > 0) {
-    // Overwritten each poll (not incremented) so a bot restart mid-stream
-    // can't double-count — dailyCount itself is the source of truth.
-    db.collection("chatStats").doc(today).set({
-      day: today,
-      messageCount,
-      chatters,
-      updatedAt: now,
-    }).catch(e => console.warn("⚠️  [analytics] chat stats snapshot failed:", e.message));
-  }
+  await _chatStatsWrite(db, dailyCount, today, now);
 }
 
 let _analyticsStarted = false;
