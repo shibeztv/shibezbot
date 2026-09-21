@@ -588,13 +588,11 @@ const newLines = [];
 // ── Per-user tracking ─────────────────────────────────────────────────────────
 
 const userLastMessage = {};        // { username: "last message text" }
-const userMessages    = {};        // { username: ["msg1", "msg2", ...] } (capped at 150)
 const reminders       = {};        // { username: [{ from, text, when, channel }] }
 const sayCooldowns    = {};        // { username: timestamp } — last time user triggered ?say
 const watchtime       = {};        // { channelName: { username: seconds } }
 const recentViewers   = {};        // { channelName: { username: lastMsgTimestamp } }
 let   watchtimeTick   = null;      // interval handle
-const USER_MSG_CAP = 150;
 
 function learnMessage(username, message) {
   if (IGNORE_BOTS.includes(username.toLowerCase())) return;
@@ -604,12 +602,9 @@ function learnMessage(username, message) {
   markov.train(message);
   newLines.push(message.replace(/[\r\n]/g, " "));
 
-  // Track per-user messages for &markov and &mock
+  // Track per-user last message for ?mock
   const u = username.toLowerCase();
   userLastMessage[u] = message;
-  if (!userMessages[u]) userMessages[u] = [];
-  userMessages[u].push(message);
-  if (userMessages[u].length > USER_MSG_CAP) userMessages[u].shift();
 }
 
 setInterval(() => {
@@ -745,7 +740,6 @@ const ctx = {
   getChannelInterval, getChannelCooldown, setChannelSetting,
   helixGet,
   userLastMessage,
-  userMessages,
   reminders,
   sayCooldowns,
   watchtime,
