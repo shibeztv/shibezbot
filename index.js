@@ -88,7 +88,7 @@ if (fs.existsSync(SEED_FILE)) {
 const DATA_DIR     = process.env.DATA_DIR || ".";
 const LEARNED_FILE = path.join(DATA_DIR, "learned_corpus.txt");
 
-const CORPUS_LOAD_LIMIT = 100_000;  // cap startup load to avoid OOM on low-RAM hosts
+const CORPUS_LOAD_LIMIT = Number(process.env.CORPUS_TRIM_AT || 10_000);  // cap startup load to avoid OOM on low-RAM hosts
 if (fs.existsSync(LEARNED_FILE)) {
   let lines = fs.readFileSync(LEARNED_FILE, "utf8")
     .split("\n").map(l => l.trim()).filter(Boolean);
@@ -585,6 +585,13 @@ function leaveChannel(ch) {
 
 const newLines = [];
 
+// Daily cap on how many new lines get learned, so growth is predictable
+// regardless of how busy chat is. Resets to 0 at midnight (see
+// scheduleMidnightReset below). Once the day's limit is hit, the bot still
+// posts/responds normally — it just stops absorbing new lines until tomorrow.
+const MAX_LINES_PER_DAY = Number(process.env.MAX_LINES_PER_DAY || 2_000);
+let linesLearnedToday = 0;
+
 // ── Per-user tracking ─────────────────────────────────────────────────────────
 
 const userLastMessage = {};        // { username: "last message text" }
@@ -599,22 +606,27 @@ function learnMessage(username, message) {
   if (username.toLowerCase() === BOT_USERNAME.toLowerCase()) return;
   if (message.startsWith("!") || message.startsWith("/") || message.startsWith("$") || message.startsWith("&")) return;
   if (message.length < 10) return;
+  if (linesLearnedToday >= MAX_LINES_PER_DAY) return; // daily cap hit — stop learning until midnight
   markov.train(message);
   newLines.push(message.replace(/[\r\n]/g, " "));
+  linesLearnedToday++;
 
   // Track per-user last message for ?mock
   const u = username.toLowerCase();
   userLastMessage[u] = message;
 }
 
+// Total corpus size caps — much smaller than before by default. Lower/raise
+// via env vars if you want a bigger or smaller vocabulary.
+const CORPUS_TRIM_AT = Number(process.env.CORPUS_TRIM_AT || 10_000);
+const CORPUS_TRIM_TO = Number(process.env.CORPUS_TRIM_TO || 8_000);
+
 setInterval(() => {
   if (newLines.length === 0) return;
   fs.appendFileSync(LEARNED_FILE, newLines.join("\n") + "\n", "utf8");
-  console.log(`💾  Saved ${newLines.length} new lines. Total corpus: ${markov.size}`);
+  console.log(`💾  Saved ${newLines.length} new lines. Total corpus: ${markov.size} | Learned today: ${linesLearnedToday}/${MAX_LINES_PER_DAY}`);
   newLines.length = 0;
   // Trim the file if it has grown too large to avoid OOM on next restart
-  const CORPUS_TRIM_AT   = 120_000;
-  const CORPUS_TRIM_TO   = 100_000;
   try {
     const allLines = fs.readFileSync(LEARNED_FILE, "utf8").split("\n").filter(Boolean);
     if (allLines.length > CORPUS_TRIM_AT) {
@@ -623,6 +635,64 @@ setInterval(() => {
     }
   } catch (e) { /* non-fatal */ }
 }, 60_000);
+
+
+// ── GitHub corpus backup — periodically pushes learned_corpus.txt to GitHub ──
+// Uses the GitHub Contents API directly (no git/CLI needed on this end).
+// Set GITHUB_TOKEN + GITHUB_REPO env vars to enable; disabled if either is missing.
+const GITHUB_TOKEN        = process.env.GITHUB_TOKEN || "";
+const GITHUB_REPO         = process.env.GITHUB_REPO  || ""; // "owner/repo"
+const GITHUB_BACKUP_PATH  = process.env.GITHUB_BACKUP_PATH  || "backups/learned_corpus.txt";
+const GITHUB_BACKUP_HOURS = Number(process.env.GITHUB_BACKUP_HOURS || 6);
+
+async function backupCorpusToGitHub() {
+  if (!GITHUB_TOKEN || !GITHUB_REPO) return;
+  if (!fs.existsSync(LEARNED_FILE)) return;
+  try {
+    const content = fs.readFileSync(LEARNED_FILE, "utf8");
+    const api = `https://api.github.com/repos/${GITHUB_REPO}/contents/${GITHUB_BACKUP_PATH}`;
+    const headers = {
+      Authorization: `Bearer ${GITHUB_TOKEN}`,
+      "User-Agent":  "shibezbot",
+      Accept:        "application/vnd.github+json",
+    };
+
+    // Need the existing file's sha to update it (GitHub requires this for overwrites).
+    let sha;
+    const getRes = await fetch(api, { headers });
+    if (getRes.ok) {
+      const getJson = await getRes.json();
+      sha = getJson.sha;
+    } else if (getRes.status !== 404) {
+      console.error(`⚠️  GitHub backup: couldn't check existing file (${getRes.status})`);
+    }
+
+    const putRes = await fetch(api, {
+      method: "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: `Backup corpus — ${new Date().toISOString()}`,
+        content: Buffer.from(content, "utf8").toString("base64"),
+        ...(sha ? { sha } : {}),
+      }),
+    });
+
+    if (!putRes.ok) {
+      const errText = await putRes.text();
+      console.error(`⚠️  GitHub corpus backup failed: ${putRes.status} ${errText.slice(0, 300)}`);
+    } else {
+      console.log(`☁️   Corpus backed up to GitHub (${GITHUB_BACKUP_PATH}), ${content.length} bytes.`);
+    }
+  } catch (e) {
+    console.error(`⚠️  GitHub corpus backup error: ${e.message}`);
+  }
+}
+
+if (GITHUB_TOKEN && GITHUB_REPO) {
+  backupCorpusToGitHub(); // once on boot
+  setInterval(backupCorpusToGitHub, GITHUB_BACKUP_HOURS * 60 * 60 * 1000);
+  console.log(`☁️   GitHub corpus backup enabled → ${GITHUB_REPO}/${GITHUB_BACKUP_PATH} every ${GITHUB_BACKUP_HOURS}h`);
+}
 
 // ── Watchtime tracker — ticks every 60s while stream is live ─────────────────
 const WATCHTIME_FILE = path.join(DATA_DIR, "watchtime.json");
@@ -635,15 +705,15 @@ if (fs.existsSync(WATCHTIME_FILE)) {
 }
 
 watchtimeTick = setInterval(() => {
-  const allChs = [...(state.postChannels || []), ...(state.manualChannels || [])];
-  for (const ch of allChs) {
-    if (!isChannelLive(ch)) continue;
+  const ch = HOME_CHANNEL; // watchtime tracked for the home channel only
+  if (isChannelLive(ch)) {
     if (!watchtime[ch]) watchtime[ch] = {};
     // Give 60s to every user who sent a message in the last 5 minutes
     const now = Date.now();
     for (const [u, ts] of Object.entries(recentViewers[ch] || {})) {
       if (now - ts < 5 * 60 * 1000) {
         watchtime[ch][u] = (watchtime[ch][u] || 0) + 60;
+        touchChannelUser(ch, u);
       }
     }
   }
@@ -675,6 +745,54 @@ Object.assign(lastseen,  loadJSON(LASTSEEN_FILE));
 Object.assign(firstline, loadJSON(FIRSTLINE_FILE));
 console.log(`📊  Linecount loaded: ${Object.keys(linecount).length} channel(s).`);
 
+// ── Bounded per-channel chatter tracking (LRU-style) ──────────────────────────
+// linecount/firstline/lastMessage/recentViewers all key by username and grow
+// forever otherwise — on a channel with tens of thousands of unique lifetime
+// chatters that adds up fast, even though these are only tracked for
+// postChannels/manualChannels (not ?addlearn channels). This caps how many
+// distinct users each channel keeps stats for; the least-recently-active
+// user's entry is evicted once a channel goes over the cap. lastseen is
+// tracked the same way but globally, since it isn't per-channel.
+const MAX_TRACKED_CHATTERS = Number(process.env.MAX_TRACKED_CHATTERS || 25_000);
+
+const channelRecency = {}; // { channel: Map<username, true> } — insertion order == recency
+
+function touchChannelUser(ch, username) {
+  let recency = channelRecency[ch];
+  if (!recency) { recency = new Map(); channelRecency[ch] = recency; }
+  if (recency.has(username)) recency.delete(username);
+  recency.set(username, true);
+  if (recency.size > MAX_TRACKED_CHATTERS) {
+    const oldest = recency.keys().next().value;
+    recency.delete(oldest);
+    if (linecount[ch])     delete linecount[ch][oldest];
+    if (firstline[ch])     delete firstline[ch][oldest];
+    if (lastMessage[ch])   delete lastMessage[ch][oldest];
+    if (recentViewers[ch]) delete recentViewers[ch][oldest];
+    if (watchtime[ch])     delete watchtime[ch][oldest];
+  }
+}
+
+const lastseenRecency = new Map();
+
+function touchLastseen(username) {
+  if (lastseenRecency.has(username)) lastseenRecency.delete(username);
+  lastseenRecency.set(username, true);
+  if (lastseenRecency.size > MAX_TRACKED_CHATTERS) {
+    const oldest = lastseenRecency.keys().next().value;
+    lastseenRecency.delete(oldest);
+    delete lastseen[oldest];
+  }
+}
+
+// Seed recency trackers from whatever was already on disk, and trim
+// immediately if a channel is already over the cap from before this change.
+for (const ch of Object.keys(linecount)) {
+  for (const u of Object.keys(linecount[ch])) touchChannelUser(ch, u);
+}
+for (const u of Object.keys(lastseen)) touchLastseen(u);
+console.log(`📏  Chatter tracking capped at ${MAX_TRACKED_CHATTERS} users/channel.`);
+
 setInterval(() => {
   try { fs.writeFileSync(LINECOUNT_FILE, JSON.stringify(linecount), "utf8"); } catch (e) {}
   try { fs.writeFileSync(LASTSEEN_FILE,  JSON.stringify(lastseen),  "utf8"); } catch (e) {}
@@ -687,7 +805,8 @@ function scheduleMidnightReset() {
   const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
   setTimeout(() => {
     for (const ch of Object.keys(dailyCount)) dailyCount[ch] = {};
-    console.log("🕛  Daily linecount reset.");
+    linesLearnedToday = 0;
+    console.log("🕛  Daily linecount + corpus-learn-limit reset.");
     scheduleMidnightReset();
   }, next - now);
 }
@@ -794,14 +913,19 @@ client.on("message", (channel, tags, message, self) => {
     if (isChannelLive(ch)) learnMessage(username, message);
   }
 
-  // Track recent viewers for watchtime
-  if (state.postChannels.includes(ch) || state.manualChannels.includes(ch)) {
+  // Track recent viewers for watchtime — home channel only (keeps this small
+  // and cheap; no point tracking viewers in other channels the bot posts in)
+  if (ch === HOME_CHANNEL) {
     if (!recentViewers[ch]) recentViewers[ch] = {};
     recentViewers[ch][username] = Date.now();
   }
 
-  // Track linecount, lastseen, firstline, lastMessage (post + manual channels only)
-  if (state.postChannels.includes(ch) || manualChannels.includes(ch)) {
+  // Track linecount, lastseen, firstline, lastMessage — home channel only.
+  // These used to track every postChannels/manualChannels channel, which on
+  // a large "joined" channel meant tens of thousands of usernames kept in
+  // RAM forever. Scoping to just the home channel keeps this to whatever a
+  // small/medium channel's real lifetime chatter count is.
+  if (ch === HOME_CHANNEL) {
     if (!linecount[ch]) linecount[ch] = {};
     linecount[ch][username] = (linecount[ch][username] || 0) + 1;
     if (!dailyCount[ch]) dailyCount[ch] = {};
@@ -811,6 +935,8 @@ client.on("message", (channel, tags, message, self) => {
     lastMessage[ch][username] = message;
     if (!firstline[ch]) firstline[ch] = {};
     if (!firstline[ch][username]) firstline[ch][username] = { text: message, at: Date.now() };
+    touchChannelUser(ch, username);
+    touchLastseen(username);
   }
 
   if (state.postChannels.includes(ch)) incrementCounter(ch);
