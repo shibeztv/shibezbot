@@ -49,8 +49,20 @@ function _analyticsDb() {
   try {
     const admin = require("firebase-admin");
     if (!admin.apps.length) {
-      const path = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "./firebase-service-account.json";
-      const serviceAccount = require(path);
+      // Two ways to supply the service account key:
+      //   1. FIREBASE_SERVICE_ACCOUNT_JSON — the *entire contents* of the
+      //      downloaded key file, pasted as one Railway environment
+      //      variable. Easiest option when you can't upload files to the
+      //      host directly (e.g. Railway's dashboard).
+      //   2. A file on disk — firebase-service-account.json next to this
+      //      file, or FIREBASE_SERVICE_ACCOUNT_PATH pointing elsewhere.
+      let serviceAccount;
+      if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+      } else {
+        const path = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "./firebase-service-account.json";
+        serviceAccount = require(path);
+      }
       admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
     }
     _fbDb = admin.firestore();
