@@ -47,8 +47,15 @@ let _fbDb = null; // null = not tried yet, false = tried and failed, object = re
 function _analyticsDb() {
   if (_fbDb !== null) return _fbDb || null;
   try {
-    const admin = require("firebase-admin");
-    if (!admin.apps.length) {
+    // firebase-admin v12+ dropped the old namespaced API (admin.apps,
+    // admin.credential.cert, admin.firestore()) in favor of these modular
+    // imports. Using the old style here silently returns `undefined` for
+    // admin.apps and throws "Cannot read properties of undefined (reading
+    // 'length')" the moment this function runs.
+    const { initializeApp, getApps, cert } = require("firebase-admin/app");
+    const { getFirestore } = require("firebase-admin/firestore");
+
+    if (!getApps().length) {
       // Two ways to supply the service account key:
       //   1. FIREBASE_SERVICE_ACCOUNT_JSON — the *entire contents* of the
       //      downloaded key file, pasted as one Railway environment
@@ -63,9 +70,9 @@ function _analyticsDb() {
         const path = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "./firebase-service-account.json";
         serviceAccount = require(path);
       }
-      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+      initializeApp({ credential: cert(serviceAccount) });
     }
-    _fbDb = admin.firestore();
+    _fbDb = getFirestore();
   } catch (e) {
     console.warn(`⚠️  [analytics] Firestore not configured (${e.message}) — viewer/chat tracking for the recap page is disabled. See the ANALYTICS setup comment near the top of commands.js.`);
     _fbDb = false;
