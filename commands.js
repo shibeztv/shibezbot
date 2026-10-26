@@ -938,7 +938,7 @@ function handle(channel, tags, message, ctx) {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
           body: JSON.stringify({
-            model: "llama-3.3-70b-versatile",
+            model: "openai/gpt-oss-120b",
             messages: [
               { role: "system", content: "You are a helpful Twitch chat assistant. Answer in 2-3 short sentences max. Be concise and casual. No markdown, no bullet points." },
               { role: "user",   content: question },
@@ -1982,7 +1982,7 @@ function handle(channel, tags, message, ctx) {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
           body: JSON.stringify({
-            model: "llama-3.3-70b-versatile",
+            model: "openai/gpt-oss-120b",
             messages: [
               {
                 role: "system",
